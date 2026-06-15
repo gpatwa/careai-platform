@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -107,3 +107,30 @@ class AuditEventORM(Base):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
+
+class PredictionEventORM(Base):
+    __tablename__ = "prediction_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_name: Mapped[str] = mapped_column(String(160), index=True)
+    model_version: Mapped[str] = mapped_column(String(64), index=True)
+    request_features_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    prediction_score: Mapped[float] = mapped_column(Float)
+    risk_band: Mapped[str] = mapped_column(String(40), index=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    correlation_id: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class DriftSnapshotORM(Base):
+    __tablename__ = "drift_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_name: Mapped[str] = mapped_column(String(160), index=True)
+    model_version: Mapped[str] = mapped_column(String(64), index=True)
+    drift_status: Mapped[str] = mapped_column(String(40), index=True)
+    metrics_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    baseline_count: Mapped[int] = mapped_column(Integer, default=0)
+    recent_count: Mapped[int] = mapped_column(Integer, default=0)
+    correlation_id: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

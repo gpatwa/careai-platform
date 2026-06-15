@@ -8,6 +8,7 @@ from careai_common.correlation import (
     ensure_correlation_id,
     set_correlation_id,
 )
+from careai_common.events import EventEnvelope, InMemoryEventPublisher
 from careai_common.logging import setup_json_logging
 
 
@@ -55,3 +56,16 @@ def test_json_logging_redacts_sensitive_keys() -> None:
     assert payload["service"] == "test-service"
     assert payload["message"] == "configured"
     assert payload["extra"]["password"] == "[REDACTED]"
+
+
+def test_in_memory_event_publisher_captures_envelopes() -> None:
+    publisher = InMemoryEventPublisher()
+    event = EventEnvelope(
+        event_type="prediction.created",
+        source="inference-service",
+        payload={"model_name": "claims-risk"},
+        correlation_id="corr-event",
+    )
+
+    assert publisher.publish(event) is True
+    assert publisher.events == [event]

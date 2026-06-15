@@ -20,6 +20,7 @@ def test_openapi_includes_control_plane_tags() -> None:
         "Evaluations",
         "Approvals",
         "Audit",
+        "Monitoring",
     }
     assert expected_tags <= tag_names
 

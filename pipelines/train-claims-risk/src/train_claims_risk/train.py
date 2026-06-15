@@ -157,6 +157,16 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+def feature_distribution(data: pd.DataFrame) -> dict[str, dict[str, float]]:
+    distributions: dict[str, dict[str, float]] = {}
+    for column in FEATURE_COLUMNS:
+        counts = data[column].astype(str).value_counts(normalize=True).sort_index()
+        distributions[column] = {
+            str(value): float(frequency) for value, frequency in counts.items()
+        }
+    return distributions
+
+
 def write_json(path: str | Path, payload: dict[str, Any] | list[Any]) -> Path:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -278,6 +288,8 @@ def train_claims_risk_model(
             "lineage_json": {
                 "training_data_hash": training_data_hash,
                 "feature_list": FEATURE_COLUMNS,
+                "baseline_feature_distribution": feature_distribution(data[FEATURE_COLUMNS]),
+                "baseline_feature_count": len(data),
                 "row_count": len(data),
                 "test_size": test_size,
                 "seed": seed,

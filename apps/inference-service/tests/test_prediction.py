@@ -154,3 +154,95 @@ def test_audit_client_sends_prediction_event(monkeypatch) -> None:
     assert captured["url"] == "http://control-plane:8000/audit-events"
     assert captured["json"]["metadata_json"] == {"risk_band": "high"}
     assert captured["json"]["target_type"] == "prediction"
+
+
+def test_audit_client_sends_monitoring_prediction_event(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict):
+            captured["url"] = url
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
+
+    delivered = AuditClient("http://control-plane:8000").send_monitoring_prediction_event(
+        model_name="claims-risk",
+        model_version="test",
+        request_features=valid_payload()["features"],
+        prediction_score=0.8,
+        risk_band="high",
+        latency_ms=12,
+        correlation_id="corr-monitoring",
+    )
+
+    assert delivered is True
+    assert captured["url"] == "http://control-plane:8000/monitoring/prediction-events"
+    assert captured["json"]["model_name"] == "claims-risk"
+    assert captured["json"]["latency_ms"] == 12
+    assert captured["json"]["correlation_id"] == "corr-monitoring"
+
+
+def test_prediction_route_emits_monitoring_event(monkeypatch) -> None:
+    posts: list[dict] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict):
+            posts.append({"url": url, "json": json})
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
+    app = create_app(
+        InferenceSettings(
+            model_uri=None,
+            model_metadata_path=None,
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url="http://control-plane:8000",
+            audit_enabled=True,
+            monitoring_enabled=True,
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/predict/claims-risk",
+            headers={"x-correlation-id": "corr-route-monitoring"},
+            json=valid_payload(),
+        )
+
+    assert response.status_code == 200
+    monitoring_post = next(
+        post for post in posts if post["url"].endswith("/monitoring/prediction-events")
+    )
+    assert monitoring_post["json"]["model_name"] == "claims-risk-rules-fallback"
+    assert monitoring_post["json"]["risk_band"] == response.json()["risk_band"]
+    assert monitoring_post["json"]["correlation_id"] == "corr-route-monitoring"
+    assert "feature_timestamp" not in monitoring_post["json"]["request_features_json"]

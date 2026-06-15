@@ -225,7 +225,7 @@ See [pipelines/train-claims-risk/README.md](pipelines/train-claims-risk/README.m
 
 ## Claims-Risk Inference API
 
-The inference service loads a trained synthetic claims-risk model from `CLAIMS_RISK_MODEL_URI` or falls back to deterministic rules when no model is configured. It validates feature shape, checks feature freshness, returns reason codes, and sends safe audit metadata to the control plane when `CONTROL_PLANE_API_URL` is configured.
+The inference service loads a trained synthetic claims-risk model from `CLAIMS_RISK_MODEL_URI` or falls back to deterministic rules when no model is configured. It validates feature shape, checks feature freshness, returns reason codes, and sends safe audit and monitoring metadata to the control plane when `CONTROL_PLANE_API_URL` is configured.
 
 Start the API:
 
@@ -282,6 +282,55 @@ Example response:
 }
 ```
 
+## Model Monitoring
+
+Prediction calls emit synthetic aggregate feature telemetry to the control plane. The monitoring endpoints summarize latency, prediction mix, high-risk rate, latest drift status, and dashboard data contracts.
+
+List recent prediction events:
+
+```bash
+curl -s http://localhost:8000/monitoring/models/claims-risk/events
+```
+
+Get dashboard-ready summary metrics:
+
+```bash
+curl -s http://localhost:8000/monitoring/models/claims-risk/summary
+```
+
+Run a drift check with an explicit synthetic baseline:
+
+```bash
+curl -s -X POST http://localhost:8000/monitoring/models/claims-risk/drift-check \
+  -H 'content-type: application/json' \
+  -H 'x-correlation-id: demo-drift-001' \
+  -d '{
+    "minimum_events": 1,
+    "baseline_features_json": [
+      {
+        "age_bucket": "18-34",
+        "plan_type": "gold",
+        "prior_claim_count": 1,
+        "recent_visit_count": 0,
+        "medication_count": 1,
+        "chronic_condition_count": 0,
+        "region_code": "R01"
+      },
+      {
+        "age_bucket": "35-49",
+        "plan_type": "silver",
+        "prior_claim_count": 2,
+        "recent_visit_count": 1,
+        "medication_count": 2,
+        "chronic_condition_count": 1,
+        "region_code": "R02"
+      }
+    ]
+  }'
+```
+
+The drift check uses PSI-style distribution differences between baseline training features and recent prediction features. `green`, `yellow`, and `red` statuses are deterministic for the supplied data. A `red` drift snapshot sets `rollback_recommended` to `true`, which is the demo trigger for rollback or human review.
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.
@@ -295,7 +344,8 @@ Example response:
 - [x] Synthetic healthcare-like data generator with deterministic seeds and quality checks.
 - [x] MLOps training pipeline with experiment metadata and model registry records.
 - [x] Inference service with model loading, feature validation, safe audit events, and fallback scoring.
-- [ ] Deployment monitoring, rollback controls, and active model promotion wiring.
+- [x] Model monitoring with prediction events, latency metrics, drift snapshots, and dashboard contracts.
+- [ ] Rollback controls and active model promotion wiring.
 - [ ] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [ ] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] Simple TypeScript demo UI skeleton for platform workflows and governance views.

@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from time import perf_counter
 from uuid import uuid4
 
 from careai_common.config import load_settings
@@ -51,6 +52,7 @@ def create_app(
     audit_client = AuditClient(
         control_plane_url=runtime_settings.control_plane_url,
         enabled=runtime_settings.audit_enabled,
+        monitoring_enabled=runtime_settings.monitoring_enabled,
     )
 
     @asynccontextmanager
@@ -146,6 +148,7 @@ def register_routes(application: FastAPI) -> None:
         ),
     )
     def predict_claims_risk(payload: ClaimsRiskPredictionRequest) -> ClaimsRiskPredictionResponse:
+        started_at = perf_counter()
         model_manager: ModelManager = application.state.model_manager
         active_model = model_manager.active_model()
         warnings = feature_warnings(
@@ -169,6 +172,7 @@ def register_routes(application: FastAPI) -> None:
         band = risk_band(score)
         correlation_id = ensure_correlation_id()
         target_id = payload.request_id or str(uuid4())
+        latency_ms = max(int((perf_counter() - started_at) * 1000), 0)
 
         logger.info(
             "claims-risk prediction",
@@ -179,6 +183,7 @@ def register_routes(application: FastAPI) -> None:
                 "model_version": active_model.model_version,
                 "fallback_mode": fallback_mode,
                 "warning_count": len(warnings),
+                "latency_ms": latency_ms,
             },
         )
 
@@ -195,6 +200,15 @@ def register_routes(application: FastAPI) -> None:
                 "fallback_mode": fallback_mode,
                 "warnings": warnings,
             },
+        )
+        application.state.audit_client.send_monitoring_prediction_event(
+            model_name=active_model.model_name,
+            model_version=active_model.model_version,
+            request_features=payload.features.feature_frame_record(),
+            prediction_score=score,
+            risk_band=band,
+            latency_ms=latency_ms,
+            correlation_id=correlation_id,
         )
 
         return ClaimsRiskPredictionResponse(

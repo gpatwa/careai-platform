@@ -46,6 +46,7 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
             {"name": "Evaluations", "description": "Evaluation metrics and reports."},
             {"name": "Approvals", "description": "Human approval decisions."},
             {"name": "Audit", "description": "Immutable-style audit event trail."},
+            {"name": "Monitoring", "description": "Prediction events, drift, and model telemetry."},
         ],
     )
     application.state.database = database

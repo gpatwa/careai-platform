@@ -48,6 +48,8 @@ def test_train_claims_risk_model_outputs_metrics_and_metadata(tmp_path) -> None:
     assert result.model_metadata["framework"] == "scikit-learn"
     assert result.model_metadata["lineage_json"]["feature_list"] == FEATURE_COLUMNS
     assert result.model_metadata["lineage_json"]["training_data_hash"]
+    assert result.model_metadata["lineage_json"]["baseline_feature_count"] == 750
+    assert "age_bucket" in result.model_metadata["lineage_json"]["baseline_feature_distribution"]
 
     overall = result.metrics["overall"]
     assert 0 <= overall["auc"] <= 1

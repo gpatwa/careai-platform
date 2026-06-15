@@ -26,6 +26,7 @@ class InferenceSettings:
     max_feature_age_minutes: int
     control_plane_url: str | None
     audit_enabled: bool
+    monitoring_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "InferenceSettings":
@@ -36,6 +37,7 @@ class InferenceSettings:
             max_feature_age_minutes=int(os.getenv("CLAIMS_RISK_MAX_FEATURE_AGE_MINUTES", "1440")),
             control_plane_url=os.getenv("CONTROL_PLANE_API_URL"),
             audit_enabled=os.getenv("INFERENCE_AUDIT_ENABLED", "true").lower() == "true",
+            monitoring_enabled=os.getenv("INFERENCE_MONITORING_ENABLED", "true").lower() == "true",
         )
 
 

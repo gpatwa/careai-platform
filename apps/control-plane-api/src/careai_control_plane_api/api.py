@@ -1,8 +1,10 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+from statistics import mean
 from typing import Annotated, Any, TypeVar
 
 from careai_common.correlation import ensure_correlation_id
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,9 +13,16 @@ from careai_control_plane_api.models import (
     AuditEventORM,
     DatasetAssetORM,
     DeploymentORM,
+    DriftSnapshotORM,
     EvaluationRunORM,
     ModelArtifactORM,
+    PredictionEventORM,
     PromptTemplateORM,
+)
+from careai_control_plane_api.monitoring import (
+    calculate_drift,
+    feature_distribution,
+    percentile,
 )
 from careai_control_plane_api.schemas import (
     ApprovalCreate,
@@ -24,10 +33,15 @@ from careai_control_plane_api.schemas import (
     DatasetAssetRead,
     DeploymentCreate,
     DeploymentRead,
+    DriftCheckRequest,
+    DriftCheckResponse,
     EvaluationRunCreate,
     EvaluationRunRead,
     ModelArtifactCreate,
     ModelArtifactRead,
+    MonitoringSummaryResponse,
+    PredictionEventCreate,
+    PredictionEventRead,
     PromoteModelRequest,
     PromptTemplateCreate,
     PromptTemplateRead,
@@ -70,6 +84,50 @@ def write_audit_event(
 
 def list_records(session: Session, model: type[OrmModel]) -> list[OrmModel]:
     return list(session.scalars(select(model).order_by(model.created_at.desc(), model.id.desc())))
+
+
+def latest_model_for_name(session: Session, model_name: str) -> ModelArtifactORM | None:
+    return session.scalars(
+        select(ModelArtifactORM)
+        .where(ModelArtifactORM.name == model_name)
+        .order_by(ModelArtifactORM.created_at.desc(), ModelArtifactORM.id.desc())
+        .limit(1)
+    ).first()
+
+
+def monitoring_events_query(model_name: str, model_version: str | None = None):
+    query = select(PredictionEventORM).where(PredictionEventORM.model_name == model_name)
+    if model_version:
+        query = query.where(PredictionEventORM.model_version == model_version)
+    return query
+
+
+def build_monitoring_dashboard_contract(
+    *,
+    model_name: str,
+    event_count: int,
+    avg_latency_ms: float | None,
+    p95_latency_ms: int | None,
+    high_risk_rate: float | None,
+    latest_drift_status: str | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "monitoring-dashboard-v1",
+        "model_name": model_name,
+        "cards": [
+            {"label": "Prediction Events", "value": event_count},
+            {"label": "Avg Latency (ms)", "value": avg_latency_ms},
+            {"label": "P95 Latency (ms)", "value": p95_latency_ms},
+            {"label": "High Risk Rate", "value": high_risk_rate},
+            {"label": "Latest Drift", "value": latest_drift_status},
+        ],
+        "rollback_triggers": [
+            "drift_status_red",
+            "p95_latency_above_slo",
+            "error_rate_above_threshold",
+            "data_quality_missingness_spike",
+        ],
+    }
 
 
 router = APIRouter()
@@ -401,3 +459,251 @@ def create_audit_event(
     session.commit()
     session.refresh(event)
     return event
+
+
+@router.post(
+    "/monitoring/prediction-events",
+    response_model=PredictionEventRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Monitoring"],
+    summary="Ingest a prediction event",
+    description="Stores safe synthetic prediction telemetry emitted by inference services.",
+)
+def create_prediction_event(
+    payload: PredictionEventCreate,
+    request: Request,
+    session: SessionDep,
+) -> PredictionEventORM:
+    event = PredictionEventORM(**payload.model_dump())
+    session.add(event)
+    session.flush()
+    write_audit_event(
+        session,
+        actor=actor_from_request(request, "inference-service"),
+        action="prediction_event.ingested",
+        target_type="prediction_event",
+        target_id=event.id,
+        metadata={
+            "model_name": event.model_name,
+            "model_version": event.model_version,
+            "risk_band": event.risk_band,
+            "latency_ms": event.latency_ms,
+        },
+    )
+    session.commit()
+    session.refresh(event)
+    return event
+
+
+@router.get(
+    "/monitoring/models/{model_name}/events",
+    response_model=list[PredictionEventRead],
+    tags=["Monitoring"],
+    summary="List prediction events for a model",
+    description="Returns recent prediction telemetry for monitoring dashboards.",
+)
+def get_prediction_events(
+    model_name: str,
+    session: SessionDep,
+    model_version: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> list[PredictionEventORM]:
+    return list(
+        session.scalars(
+            monitoring_events_query(model_name, model_version)
+            .order_by(PredictionEventORM.created_at.desc(), PredictionEventORM.id.desc())
+            .limit(limit)
+        )
+    )
+
+
+@router.get(
+    "/monitoring/models/{model_name}/summary",
+    response_model=MonitoringSummaryResponse,
+    tags=["Monitoring"],
+    summary="Get monitoring summary for a model",
+    description="Returns dashboard-ready model monitoring metrics and latest drift state.",
+)
+def get_monitoring_summary(
+    model_name: str,
+    session: SessionDep,
+    model_version: str | None = Query(default=None),
+) -> MonitoringSummaryResponse:
+    events = list(session.scalars(monitoring_events_query(model_name, model_version)))
+    latency_values = [event.latency_ms for event in events]
+    scores = [event.prediction_score for event in events]
+    risk_band_counts = {"low": 0, "medium": 0, "high": 0}
+    for event in events:
+        risk_band_counts[event.risk_band] = risk_band_counts.get(event.risk_band, 0) + 1
+
+    latest_drift = session.scalars(
+        select(DriftSnapshotORM)
+        .where(DriftSnapshotORM.model_name == model_name)
+        .order_by(DriftSnapshotORM.created_at.desc(), DriftSnapshotORM.id.desc())
+        .limit(1)
+    ).first()
+
+    event_count = len(events)
+    avg_latency_ms = round(mean(latency_values), 2) if latency_values else None
+    avg_prediction_score = round(mean(scores), 6) if scores else None
+    high_risk_rate = (
+        round(risk_band_counts.get("high", 0) / event_count, 6) if event_count else None
+    )
+    latest_drift_status = latest_drift.drift_status if latest_drift else None
+    p95_latency_ms = percentile(latency_values, 0.95)
+
+    dashboard_contract = build_monitoring_dashboard_contract(
+        model_name=model_name,
+        event_count=event_count,
+        avg_latency_ms=avg_latency_ms,
+        p95_latency_ms=p95_latency_ms,
+        high_risk_rate=high_risk_rate,
+        latest_drift_status=latest_drift_status,
+    )
+
+    return MonitoringSummaryResponse(
+        model_name=model_name,
+        event_count=event_count,
+        model_versions=sorted({event.model_version for event in events}),
+        avg_latency_ms=avg_latency_ms,
+        p95_latency_ms=p95_latency_ms,
+        avg_prediction_score=avg_prediction_score,
+        risk_band_counts=risk_band_counts,
+        high_risk_rate=high_risk_rate,
+        error_rate=0.0,
+        latest_drift_status=latest_drift_status,
+        latest_drift_snapshot_id=latest_drift.id if latest_drift else None,
+        dashboard_contract=dashboard_contract,
+    )
+
+
+@router.post(
+    "/monitoring/models/{model_name}/drift-check",
+    response_model=DriftCheckResponse,
+    tags=["Monitoring"],
+    summary="Run a deterministic drift check",
+    description=(
+        "Compares baseline training feature distributions to recent prediction feature "
+        "distributions using PSI-style metrics."
+    ),
+)
+def run_drift_check(
+    model_name: str,
+    payload: DriftCheckRequest,
+    session: SessionDep,
+) -> DriftCheckResponse:
+    if payload.red_threshold < payload.yellow_threshold:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="red_threshold must be greater than or equal to yellow_threshold",
+        )
+
+    cutoff = datetime.now(UTC) - timedelta(hours=payload.lookback_hours)
+    recent_events = list(
+        session.scalars(
+            monitoring_events_query(model_name)
+            .where(PredictionEventORM.created_at >= cutoff)
+            .order_by(PredictionEventORM.created_at.desc(), PredictionEventORM.id.desc())
+        )
+    )
+    if len(recent_events) < payload.minimum_events:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough recent prediction events for drift check",
+        )
+
+    latest_model = latest_model_for_name(session, model_name)
+    model_version = (
+        recent_events[0].model_version
+        if recent_events
+        else latest_model.version
+        if latest_model
+        else "unknown"
+    )
+
+    baseline_count = 0
+    if payload.baseline_distribution_json is not None:
+        baseline_distribution = payload.baseline_distribution_json
+    elif payload.baseline_features_json is not None:
+        baseline_count = len(payload.baseline_features_json)
+        baseline_distribution = feature_distribution(payload.baseline_features_json)
+    else:
+        lineage = latest_model.lineage_json if latest_model else {}
+        baseline_distribution = lineage.get("baseline_feature_distribution")
+        baseline_count = int(lineage.get("baseline_feature_count", 0))
+
+    if not baseline_distribution:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Baseline distribution is required for drift check",
+        )
+
+    recent_features = [event.request_features_json for event in recent_events]
+    recent_distribution = feature_distribution(recent_features)
+    drift_status, feature_metrics = calculate_drift(
+        baseline_distribution=baseline_distribution,
+        recent_distribution=recent_distribution,
+        yellow_threshold=payload.yellow_threshold,
+        red_threshold=payload.red_threshold,
+    )
+    rollback_recommended = drift_status == "red"
+    dashboard_contract = {
+        "schema_version": "model-drift-v1",
+        "model_name": model_name,
+        "model_version": model_version,
+        "status": drift_status,
+        "feature_drift": feature_metrics,
+        "training_serving_skew": {
+            "baseline_count": baseline_count,
+            "recent_count": len(recent_events),
+        },
+        "rollback_recommended": rollback_recommended,
+        "rollback_triggers": [
+            "red_drift_on_any_key_feature",
+            "sustained_latency_or_error_slo_breach",
+            "human_review_required_for_high_business_impact",
+        ],
+    }
+
+    snapshot = DriftSnapshotORM(
+        model_name=model_name,
+        model_version=model_version,
+        drift_status=drift_status,
+        metrics_json={
+            "feature_metrics": feature_metrics,
+            "dashboard_contract": dashboard_contract,
+        },
+        baseline_count=baseline_count,
+        recent_count=len(recent_events),
+        correlation_id=ensure_correlation_id(),
+    )
+    session.add(snapshot)
+    session.flush()
+    write_audit_event(
+        session,
+        actor="monitoring-job",
+        action="drift_check.completed",
+        target_type="model",
+        target_id=model_name,
+        metadata={
+            "model_version": model_version,
+            "drift_status": drift_status,
+            "snapshot_id": snapshot.id,
+            "rollback_recommended": rollback_recommended,
+        },
+    )
+    session.commit()
+    session.refresh(snapshot)
+
+    return DriftCheckResponse(
+        model_name=model_name,
+        model_version=model_version,
+        drift_status=drift_status,
+        baseline_count=baseline_count,
+        recent_count=len(recent_events),
+        feature_metrics=feature_metrics,
+        rollback_recommended=rollback_recommended,
+        snapshot_id=snapshot.id,
+        created_at=snapshot.created_at,
+        dashboard_contract=dashboard_contract,
+    )
