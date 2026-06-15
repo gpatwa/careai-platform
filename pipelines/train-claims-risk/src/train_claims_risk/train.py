@@ -265,7 +265,9 @@ def train_claims_risk_model(
         feature_list_path = write_json(output_path / "feature-list.json", feature_payload)
         metrics_path = write_json(output_path / "metrics.json", metrics)
 
-        model_artifact_uri = f"runs:/{run_id}/model"
+        model_info = mlflow.sklearn.log_model(model, name="model")
+        model_artifact_uri = model_info.model_uri
+
         model_metadata = {
             "name": "claims-risk",
             "version": model_version,
@@ -295,8 +297,6 @@ def train_claims_risk_model(
             mlflow.log_artifact(str(temp_feature_path), artifact_path="metadata")
             mlflow.log_artifact(str(temp_metadata_path), artifact_path="metadata")
             mlflow.log_artifact(str(temp_metrics_path), artifact_path="metadata")
-
-        mlflow.sklearn.log_model(model, artifact_path="model")
 
     registered_model_id = register_model_with_control_plane(
         register_control_plane_url,

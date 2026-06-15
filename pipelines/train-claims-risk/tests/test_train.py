@@ -59,5 +59,4 @@ def test_train_claims_risk_model_outputs_metrics_and_metadata(tmp_path) -> None:
     assert result.metrics["segments"]["plan_type"]
 
     saved_metadata = json.loads(result.model_metadata_path.read_text())
-    assert saved_metadata["artifact_uri"].startswith("runs:/")
-
+    assert saved_metadata["artifact_uri"]
