@@ -11,6 +11,7 @@ from careai_common.correlation import (
     set_correlation_id,
 )
 from careai_common.logging import setup_json_logging
+from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
 
 from careai_inference_service.audit import AuditClient
@@ -29,7 +30,7 @@ from careai_inference_service.scoring import (
 )
 
 settings = load_settings("inference-service", 8001)
-setup_json_logging(settings.service_name, settings.log_level)
+setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +76,7 @@ def create_app(
     application.state.inference_settings = runtime_settings
     application.state.model_manager = model_manager
     application.state.audit_client = audit_client
+    instrument_fastapi_app(application, settings)
     application.middleware("http")(correlation_middleware)
     register_routes(application)
     return application
@@ -187,6 +189,12 @@ def register_routes(application: FastAPI) -> None:
                 "warning_count": len(warnings),
                 "latency_ms": latency_ms,
             },
+        )
+        application.state.observability.record_prediction(
+            model_name=active_model.model_name,
+            model_version=active_model.model_version,
+            fallback_mode=fallback_mode,
+            risk_band=band,
         )
 
         application.state.audit_client.send_prediction_event(

@@ -10,6 +10,13 @@ def test_healthz() -> None:
     assert response.json()["service"] == "inference-service"
 
 
+def test_correlation_id_header_is_propagated() -> None:
+    response = TestClient(app).get("/healthz", headers={"x-correlation-id": "corr-inference"})
+
+    assert response.status_code == 200
+    assert response.headers["x-correlation-id"] == "corr-inference"
+
+
 def test_readyz() -> None:
     response = TestClient(app).get("/readyz")
 

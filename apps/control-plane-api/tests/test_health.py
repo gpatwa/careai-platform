@@ -10,6 +10,13 @@ def test_healthz() -> None:
     assert response.json()["service"] == "control-plane-api"
 
 
+def test_correlation_id_header_is_propagated() -> None:
+    response = TestClient(app).get("/healthz", headers={"x-correlation-id": "corr-health"})
+
+    assert response.status_code == 200
+    assert response.headers["x-correlation-id"] == "corr-health"
+
+
 def test_readyz() -> None:
     response = TestClient(app).get("/readyz")
 

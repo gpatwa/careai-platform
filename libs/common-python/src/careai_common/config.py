@@ -9,6 +9,7 @@ class AppSettings(BaseModel):
     environment: str = "local"
     log_level: str = "INFO"
     service_port: int
+    applicationinsights_connection_string: str | None = None
     database_url: str = "postgresql://careai:careai_dev_password@localhost:5432/careai"
     redis_url: str = "redis://localhost:6379/0"
     mlflow_tracking_uri: str = "http://localhost:5000"
@@ -24,6 +25,7 @@ def load_settings(service_name: str, default_port: int) -> AppSettings:
         environment=os.getenv("ENVIRONMENT", "local"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         service_port=int(os.getenv("SERVICE_PORT", str(default_port))),
+        applicationinsights_connection_string=os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"),
         database_url=os.getenv(
             "DATABASE_URL",
             "postgresql://careai:careai_dev_password@localhost:5432/careai",

@@ -9,6 +9,7 @@ from careai_common.correlation import (
     set_correlation_id,
 )
 from careai_common.logging import setup_json_logging
+from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
 from sqlalchemy import text
 
@@ -16,7 +17,7 @@ from careai_control_plane_api.api import router as control_plane_router
 from careai_control_plane_api.database import Database
 
 settings = load_settings("control-plane-api", 8000)
-setup_json_logging(settings.service_name, settings.log_level)
+setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +51,7 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
         ],
     )
     application.state.database = database
+    instrument_fastapi_app(application, settings)
     application.include_router(control_plane_router)
     register_core_routes(application)
     return application

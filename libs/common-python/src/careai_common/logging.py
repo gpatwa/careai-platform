@@ -29,9 +29,10 @@ def _redact(value: Any) -> Any:
 
 
 class JsonFormatter(logging.Formatter):
-    def __init__(self, service_name: str) -> None:
+    def __init__(self, service_name: str, environment: str = "local") -> None:
         super().__init__()
         self.service_name = service_name
+        self.environment = environment
 
     def format(self, record: logging.LogRecord) -> str:
         extras = {
@@ -43,19 +44,28 @@ class JsonFormatter(logging.Formatter):
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "service_name": self.service_name,
             "service": self.service_name,
+            "environment": self.environment,
             "message": record.getMessage(),
             "correlation_id": get_correlation_id(),
             "extra": _redact(extras),
         }
+        for field_name in ("actor", "model_version", "prompt_version"):
+            if field_name in extras:
+                payload[field_name] = _redact(extras[field_name])
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(_redact(payload), separators=(",", ":"))
 
 
-def setup_json_logging(service_name: str, level: str = "INFO") -> None:
+def setup_json_logging(
+    service_name: str,
+    level: str = "INFO",
+    environment: str = "local",
+) -> None:
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(service_name=service_name))
+    handler.setFormatter(JsonFormatter(service_name=service_name, environment=environment))
 
     root = logging.getLogger()
     root.handlers.clear()

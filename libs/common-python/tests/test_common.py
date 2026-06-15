@@ -2,7 +2,7 @@ import json
 import logging
 
 from careai_common.audit import AuditActor, AuditEvent
-from careai_common.config import load_settings
+from careai_common.config import AppSettings, load_settings
 from careai_common.correlation import (
     clear_correlation_id,
     ensure_correlation_id,
@@ -10,6 +10,7 @@ from careai_common.correlation import (
 )
 from careai_common.events import EventEnvelope, InMemoryEventPublisher
 from careai_common.logging import setup_json_logging
+from careai_common.observability import configure_application_insights
 
 
 def test_load_settings_defaults() -> None:
@@ -36,8 +37,8 @@ def test_correlation_id_can_be_set_and_used_by_audit_event() -> None:
         clear_correlation_id(token)
 
 
-def test_json_logging_redacts_sensitive_keys() -> None:
-    setup_json_logging("test-service")
+def test_json_logging_redacts_sensitive_keys_and_promotes_enterprise_fields() -> None:
+    setup_json_logging("test-service", environment="unit-test")
 
     ensure_correlation_id()
     record = logging.LogRecord(
@@ -50,12 +51,48 @@ def test_json_logging_redacts_sensitive_keys() -> None:
         exc_info=None,
     )
     record.password = "do-not-log"
+    record.actor = "synthetic-operator"
+    record.model_version = "1.2.3"
 
     rendered = logging.getLogger().handlers[0].formatter.format(record)
     payload = json.loads(rendered)
+    assert payload["service_name"] == "test-service"
     assert payload["service"] == "test-service"
+    assert payload["environment"] == "unit-test"
     assert payload["message"] == "configured"
+    assert payload["actor"] == "synthetic-operator"
+    assert payload["model_version"] == "1.2.3"
     assert payload["extra"]["password"] == "[REDACTED]"
+
+
+def test_application_insights_is_optional_without_connection_string(monkeypatch) -> None:
+    monkeypatch.delenv("APPLICATIONINSIGHTS_CONNECTION_STRING", raising=False)
+    settings = load_settings("demo-service", 8080)
+
+    assert configure_application_insights(settings) is False
+
+
+def test_application_insights_configures_exporter_when_connection_string(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_configure_azure_monitor(*, connection_string: str) -> None:
+        calls.append(connection_string)
+
+    monkeypatch.setattr(
+        "careai_common.observability.configure_azure_monitor",
+        fake_configure_azure_monitor,
+    )
+    settings = AppSettings(
+        service_name="demo-service",
+        service_port=8080,
+        applicationinsights_connection_string=(
+            "InstrumentationKey=00000000-0000-0000-0000-000000000000;"
+            "IngestionEndpoint=https://example.invalid/"
+        ),
+    )
+
+    assert configure_application_insights(settings) is True
+    assert calls == [settings.applicationinsights_connection_string]
 
 
 def test_in_memory_event_publisher_captures_envelopes() -> None:

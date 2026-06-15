@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from statistics import mean
@@ -54,6 +55,7 @@ from careai_control_plane_api.schemas import (
 OrmModel = TypeVar("OrmModel")
 DEFAULT_LATENCY_SLO_MS = 750
 DEFAULT_ERROR_RATE_SLO = 0.02
+logger = logging.getLogger(__name__)
 
 
 def get_session(request: Request) -> Generator[Session, None, None]:
@@ -76,15 +78,28 @@ def write_audit_event(
     target_id: str,
     metadata: dict[str, Any] | None = None,
 ) -> AuditEventORM:
+    metadata = metadata or {}
     event = AuditEventORM(
         actor=actor,
         action=action,
         target_type=target_type,
         target_id=target_id,
         correlation_id=ensure_correlation_id(),
-        metadata_json=metadata or {},
+        metadata_json=metadata,
     )
     session.add(event)
+    logger.info(
+        "audit event recorded",
+        extra={
+            "actor": actor,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "model_version": metadata.get("model_version") or metadata.get("version"),
+            "prompt_version": metadata.get("prompt_version")
+            or (metadata.get("version") if target_type == "prompt" else None),
+        },
+    )
     return event
 
 
@@ -700,6 +715,7 @@ def get_monitoring_summary(
 def run_drift_check(
     model_name: str,
     payload: DriftCheckRequest,
+    request: Request,
     session: SessionDep,
 ) -> DriftCheckResponse:
     if payload.red_threshold < payload.yellow_threshold:
@@ -755,6 +771,10 @@ def run_drift_check(
         recent_distribution=recent_distribution,
         yellow_threshold=payload.yellow_threshold,
         red_threshold=payload.red_threshold,
+    )
+    request.app.state.observability.record_drift_status(
+        model_name=model_name,
+        status=drift_status,
     )
     rollback_recommended = drift_status == "red"
     dashboard_contract = {

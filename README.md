@@ -475,6 +475,10 @@ The stack creates ACR, Container Apps, Log Analytics, Application Insights, Key 
 
 After Terraform has created the Azure resources, run the `deploy-azure-container-apps` GitHub Actions workflow to build images, push to ACR, update Container Apps, and run smoke tests. The workflow uses Azure OpenID Connect and GitHub repository variables/secrets; setup details are in [infra/terraform/README.md](infra/terraform/README.md#github-actions-deployment).
 
+## Observability
+
+FastAPI services are instrumented with OpenTelemetry. Local runs emit structured JSON logs without Azure credentials; setting `APPLICATIONINSIGHTS_CONNECTION_STRING` enables Azure Monitor/Application Insights export for traces, logs, and metrics. See [docs/observability.md](docs/observability.md) for metric names, dashboard guidance, and suggested alert rules.
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.

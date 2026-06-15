@@ -56,6 +56,14 @@ def test_healthz_and_readyz() -> None:
     assert ready.json()["dependencies"]["retrieval"] == "fixed-test-retriever"
 
 
+def test_correlation_id_header_is_propagated() -> None:
+    with TestClient(app_with_fixed_retriever()) as client:
+        response = client.get("/healthz", headers={"x-correlation-id": "corr-rag"})
+
+    assert response.status_code == 200
+    assert response.headers["x-correlation-id"] == "corr-rag"
+
+
 def test_role_filter_excludes_unauthorized_documents(tmp_path: Path) -> None:
     retriever = LocalVectorRetriever(
         index_path=tmp_path / "rag-index.json",

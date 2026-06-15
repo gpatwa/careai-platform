@@ -1,5 +1,6 @@
 import logging
 import os
+from time import perf_counter
 
 from careai_common.config import load_settings
 from careai_common.correlation import (
@@ -8,6 +9,7 @@ from careai_common.correlation import (
     set_correlation_id,
 )
 from careai_common.logging import setup_json_logging
+from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, HTTPException, Request, Response, status
 
 from careai_rag_service.audit import AuditClient
@@ -35,7 +37,7 @@ from careai_rag_service.schemas import (
 )
 
 settings = load_settings("rag-service", 8002)
-setup_json_logging(settings.service_name, settings.log_level)
+setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
 
 
@@ -81,6 +83,7 @@ def create_app(
     application.state.llm_provider = runtime_llm_provider
     application.state.prompt_registry = runtime_prompt_registry
     application.state.audit_client = runtime_audit_client
+    instrument_fastapi_app(application, settings)
     application.middleware("http")(correlation_middleware)
     register_routes(application)
     return application
@@ -157,16 +160,19 @@ def register_routes(application: FastAPI) -> None:
             )
 
         safety_flags = advisory_safety_flags(payload.question)
+        retrieval_started_at = perf_counter()
         chunks = application.state.retriever.search(
             query=payload.question,
             role=payload.role,
             top_k=payload.top_k,
         )
+        retrieval_latency_ms = max((perf_counter() - retrieval_started_at) * 1000, 0.0)
         if not chunks:
             safety_flags.append("no_role_authorized_context_found")
 
         prompt = application.state.prompt_registry.select_prompt(payload.prompt_template_id)
         correlation_id = ensure_correlation_id()
+        llm_started_at = perf_counter()
         llm_response = application.state.llm_provider.generate_answer(
             question=payload.question,
             prompt=prompt,
@@ -174,6 +180,7 @@ def register_routes(application: FastAPI) -> None:
             safety_flags=safety_flags,
             correlation_id=correlation_id,
         )
+        llm_latency_ms = max((perf_counter() - llm_started_at) * 1000, 0.0)
         citations = citations_from_chunks(chunks)
         if chunks and not has_source_citation(llm_response.answer, chunks):
             safety_flags.append("missing_inline_citations")
@@ -193,7 +200,17 @@ def register_routes(application: FastAPI) -> None:
                 "prompt_version": prompt.version,
                 "safety_flag_count": len(safety_flags),
                 "human_review_required": review_required,
+                "retrieval_latency_ms": int(retrieval_latency_ms),
+                "llm_latency_ms": int(llm_latency_ms),
             },
+        )
+        application.state.observability.record_rag_query(
+            prompt_version=prompt.version,
+            provider=llm_response.provider,
+            safety_flags=safety_flags,
+            retrieval_latency_ms=retrieval_latency_ms,
+            llm_latency_ms=llm_latency_ms,
+            fallback_mode=llm_response.fallback_mode,
         )
 
         application.state.audit_client.send_rag_query_event(
