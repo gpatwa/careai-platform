@@ -21,6 +21,14 @@ Implemented platform areas:
 - Optional AKS Helm chart that renders the four app services without secrets.
 - End-to-end local demo and Azure smoke-test scripts under `scripts/`.
 
+Supporting architecture and deployment docs:
+
+- [System architecture](diagrams/system_architecture.md)
+- [Data flow](diagrams/data_flow.md)
+- [Azure network architecture](diagrams/azure_network_architecture.md)
+- [Local deployment runbook](deployment/local_deployment.md)
+- [Azure deployment runbook](deployment/azure_deployment_runbook.md)
+
 ## What Is Intentionally Mocked
 
 The demo is intentionally synthetic and uses safe local fallbacks:
@@ -60,7 +68,7 @@ Default deployment target: Azure Container Apps.
      -target=azurerm_container_registry.this
    ```
 
-4. Build and push images to ACR, or use `.github/workflows/deploy-azure-container-apps.yml`.
+4. Build and push initial `latest` images to ACR. The GitHub deployment workflow is intended for subsequent app updates after Container Apps exist.
 
 5. Apply the full Terraform stack:
 
@@ -69,7 +77,7 @@ Default deployment target: Azure Container Apps.
    terraform apply tfplan
    ```
 
-6. Configure GitHub repository variables and secrets from Terraform outputs, then run the manual `deploy-azure-container-apps` workflow.
+6. Configure GitHub repository variables and secrets from Terraform outputs, then run the manual `deploy-azure-container-apps` workflow. The workflow rebuilds the web console with the deployed API URLs and deploys commit-tagged images.
 
 7. Run deployed smoke tests:
 

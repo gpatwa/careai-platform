@@ -28,7 +28,7 @@ services:
       retries: 5
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.16.2
+    image: ghcr.io/mlflow/mlflow:v3.13.0
     container_name: careai-mlflow
     depends_on:
       postgres:
@@ -44,6 +44,11 @@ services:
       - /bin/sh
       - -c
       - pip install psycopg2-binary >/tmp/mlflow-pip.log 2>&1 && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri "$$MLFLOW_BACKEND_STORE_URI" --default-artifact-root "$$MLFLOW_ARTIFACT_ROOT"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.33.0
@@ -65,11 +70,16 @@ services:
       SERVICE_NAME: control-plane-api
       SERVICE_PORT: "8000"
       CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://careai:careai_dev_password@postgres:5432/careai
+      AZURE_EVENTHUB_NAME: ${AZURE_EVENTHUB_NAME:-}
+      AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE:-}
+      AZURE_EVENTHUB_CONNECTION_STRING: ${AZURE_EVENTHUB_CONNECTION_STRING:-}
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   inference-service:
     build:
@@ -80,17 +90,27 @@ services:
       SERVICE_NAME: inference-service
       SERVICE_PORT: "8001"
       CONTROL_PLANE_API_URL: http://control-plane-api:8000
+      CONTROL_PLANE_URL: http://control-plane-api:8000
       CLAIMS_RISK_MODEL_URI: ${CLAIMS_RISK_MODEL_URI:-}
+      CLAIMS_RISK_MODEL_PATH: ${CLAIMS_RISK_MODEL_PATH:-}
       CLAIMS_RISK_MODEL_METADATA_PATH: ${CLAIMS_RISK_MODEL_METADATA_PATH:-}
       CLAIMS_RISK_FEATURE_VERSION: ${CLAIMS_RISK_FEATURE_VERSION:-claims-risk-features-v1}
       CLAIMS_RISK_MAX_FEATURE_AGE_MINUTES: ${CLAIMS_RISK_MAX_FEATURE_AGE_MINUTES:-1440}
+      CLAIMS_RISK_CHAMPION_MODEL_URI: ${CLAIMS_RISK_CHAMPION_MODEL_URI:-}
+      CLAIMS_RISK_CHALLENGER_MODEL_URI: ${CLAIMS_RISK_CHALLENGER_MODEL_URI:-}
+      CLAIMS_RISK_TRAFFIC_SPLIT_JSON: ${CLAIMS_RISK_TRAFFIC_SPLIT_JSON:-}
       INFERENCE_AUDIT_ENABLED: ${INFERENCE_AUDIT_ENABLED:-true}
       INFERENCE_MONITORING_ENABLED: ${INFERENCE_MONITORING_ENABLED:-true}
+      AZURE_EVENTHUB_NAME: ${AZURE_EVENTHUB_NAME:-}
+      AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE:-}
+      AZURE_EVENTHUB_CONNECTION_STRING: ${AZURE_EVENTHUB_CONNECTION_STRING:-}
     ports:
       - "8001:8001"
     depends_on:
-      - postgres
-      - redis
+      control-plane-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   rag-service:
     build:
@@ -101,14 +121,30 @@ services:
       SERVICE_NAME: rag-service
       SERVICE_PORT: "8002"
       CONTROL_PLANE_API_URL: http://control-plane-api:8000
+      CONTROL_PLANE_URL: http://control-plane-api:8000
       RAG_DOCS_DIR: data/synthetic_docs
       RAG_LOCAL_INDEX_PATH: data/local/rag-index.json
       RAG_AUDIT_ENABLED: ${RAG_AUDIT_ENABLED:-true}
+      AZURE_AI_SEARCH_ENDPOINT: ${AZURE_AI_SEARCH_ENDPOINT:-}
+      AZURE_AI_SEARCH_INDEX: ${AZURE_AI_SEARCH_INDEX:-careai-rag-chunks}
+      AZURE_AI_SEARCH_INDEX_NAME: ${AZURE_AI_SEARCH_INDEX_NAME:-careai-rag-chunks}
+      AZURE_AI_SEARCH_API_KEY: ${AZURE_AI_SEARCH_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_CHAT_DEPLOYMENT: ${AZURE_OPENAI_CHAT_DEPLOYMENT:-}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
+      AZURE_EVENTHUB_NAME: ${AZURE_EVENTHUB_NAME:-}
+      AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE:-}
+      AZURE_EVENTHUB_CONNECTION_STRING: ${AZURE_EVENTHUB_CONNECTION_STRING:-}
     ports:
       - "8002:8002"
     depends_on:
-      - postgres
-      - redis
+      control-plane-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web-console:
     build:
@@ -120,9 +156,12 @@ services:
     ports:
       - "3000:8080"
     depends_on:
-      - control-plane-api
-      - inference-service
-      - rag-service
+      control-plane-api:
+        condition: service_healthy
+      inference-service:
+        condition: service_healthy
+      rag-service:
+        condition: service_healthy
 
 volumes:
   postgres-data:

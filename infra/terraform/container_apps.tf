@@ -70,6 +70,22 @@ resource "azurerm_container_app" "control_plane" {
         name  = "AZURE_STORAGE_ACCOUNT_NAME"
         value = azurerm_storage_account.this.name
       }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_NAME"
+          value = azurerm_eventhub.prediction_audit[0].name
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE"
+          value = "${azurerm_eventhub_namespace.this[0].name}.servicebus.windows.net"
+        }
+      }
     }
   }
 
@@ -146,6 +162,22 @@ resource "azurerm_container_app" "inference" {
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         value = azurerm_application_insights.this.connection_string
+      }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_NAME"
+          value = azurerm_eventhub.prediction_audit[0].name
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE"
+          value = "${azurerm_eventhub_namespace.this[0].name}.servicebus.windows.net"
+        }
       }
     }
   }
@@ -231,8 +263,29 @@ resource "azurerm_container_app" "rag" {
       }
 
       env {
+        name  = "AZURE_AI_SEARCH_INDEX"
+        value = "careai-rag-chunks"
+      }
+
+      env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         value = azurerm_application_insights.this.connection_string
+      }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_NAME"
+          value = azurerm_eventhub.prediction_audit[0].name
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.enable_event_hubs ? [1] : []
+        content {
+          name  = "AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE"
+          value = "${azurerm_eventhub_namespace.this[0].name}.servicebus.windows.net"
+        }
       }
     }
   }
@@ -276,16 +329,6 @@ resource "azurerm_container_app" "web_console" {
       image  = local.web_console_image
       cpu    = 0.25
       memory = "0.5Gi"
-
-      env {
-        name  = "VITE_CONTROL_PLANE_API_URL"
-        value = local.control_plane_url
-      }
-
-      env {
-        name  = "VITE_RAG_SERVICE_URL"
-        value = local.rag_url
-      }
     }
   }
 

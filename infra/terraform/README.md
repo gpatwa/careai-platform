@@ -109,7 +109,14 @@ terraform plan -out tfplan
 terraform apply tfplan
 ```
 
-The Vite web console reads API URLs at image build time. For a polished Azure-hosted UI, rebuild and push the web console after the first full apply using `terraform output -json container_apps_urls`, update `container_image_tags.web_console`, and apply again.
+The Vite web console reads API URLs at image build time. For a polished Azure-hosted UI, either run the GitHub Actions deployment after the first full Terraform apply, or rebuild the web image with the Container Apps URLs from `terraform output -json container_apps_urls`, update `container_image_tags.web_console`, and apply again.
+
+The first deployment has a small bootstrap loop because Container Apps need images and the web image benefits from final service URLs:
+
+1. Apply only the resource group and ACR.
+2. Push initial `latest` images.
+3. Run the full Terraform apply to create Container Apps and supporting Azure resources.
+4. Run the GitHub Actions deployment once. It resolves Container App URLs before building the web console and redeploys all images with a commit-based tag.
 
 ## Outputs
 
@@ -165,7 +172,9 @@ terraform output -raw event_hub_name
 | `AZURE_AI_SEARCH_ENDPOINT` | Terraform `azure_ai_search_endpoint`, when using Azure AI Search. |
 | `AZURE_AI_SEARCH_INDEX` | Search index name, usually `careai-rag-chunks`. |
 | `AZURE_OPENAI_ENDPOINT` | Optional Azure OpenAI endpoint. |
-| `AZURE_OPENAI_DEPLOYMENT` | Optional Azure OpenAI chat or embedding deployment name. |
+| `AZURE_OPENAI_DEPLOYMENT` | Optional shared Azure OpenAI deployment fallback. |
+| `AZURE_OPENAI_CHAT_DEPLOYMENT` | Optional Azure OpenAI chat deployment. Falls back to `AZURE_OPENAI_DEPLOYMENT`. |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Optional Azure OpenAI embedding deployment. Falls back to `AZURE_OPENAI_DEPLOYMENT`. |
 | `AZURE_EVENTHUB_NAME` | Terraform `event_hub_name`, usually `prediction-audit-events`. |
 | `AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE` | Terraform `event_hubs_fully_qualified_namespace` for managed-identity Event Hubs publishing. |
 
@@ -181,6 +190,10 @@ Create GitHub repository secrets when those integrations are enabled:
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional Application Insights connection string. |
 
 Run the workflow from the GitHub Actions tab. It accepts an optional `image_tag`; when omitted it deploys the commit SHA. The workflow stores runtime configuration as Container App secrets and references them from environment variables. If Azure OpenAI is not configured, the RAG smoke test uses the local deterministic mock provider.
+
+Azure AI Search and Azure OpenAI are intentionally configuration-gated. Terraform provisions Azure AI Search and gives the Container Apps identity Search RBAC, but the current application client uses API-key auth for the Search data plane. Set `AZURE_AI_SEARCH_API_KEY` plus an embedding provider to use Azure-backed retrieval; otherwise the RAG service uses the local JSON vector index fallback.
+
+For durable Azure control-plane metadata, set `enable_postgres = true` or provide a `DATABASE_URL` secret that points at a managed PostgreSQL instance. Without that configuration, the control plane can still run for a smoke demo, but container-local SQLite state should be treated as ephemeral.
 
 If OpenID Connect is not available in your organization, create a service principal scoped to the demo resource group, store its JSON credentials in a GitHub secret such as `AZURE_CREDENTIALS`, and replace the `azure/login` step with `creds: ${{ secrets.AZURE_CREDENTIALS }}`. OIDC is preferred because it avoids long-lived cloud credentials in GitHub.
 
