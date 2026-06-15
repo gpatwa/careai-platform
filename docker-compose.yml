@@ -100,6 +100,10 @@ services:
     environment:
       SERVICE_NAME: rag-service
       SERVICE_PORT: "8002"
+      CONTROL_PLANE_API_URL: http://control-plane-api:8000
+      RAG_DOCS_DIR: data/synthetic_docs
+      RAG_LOCAL_INDEX_PATH: data/local/rag-index.json
+      RAG_AUDIT_ENABLED: ${RAG_AUDIT_ENABLED:-true}
     ports:
       - "8002:8002"
     depends_on:
