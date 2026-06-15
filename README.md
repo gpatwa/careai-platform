@@ -283,6 +283,18 @@ curl -s http://localhost:8002/rag/query \
 
 Set `AZURE_OPENAI_CHAT_DEPLOYMENT` with the existing Azure OpenAI variables to use Azure OpenAI chat. Set Azure AI Search and embedding variables to retrieve from Azure AI Search; otherwise the service lazily builds `data/local/rag-index.json` from `data/synthetic_docs`.
 
+## RAG Evaluation
+
+The GenAI evaluation pipeline runs a synthetic 20-question eval set against the RAG gateway and writes an audit-ready JSON report with retrieval, citation, relevance, groundedness, safety, latency, and token-count-placeholder metrics.
+
+```bash
+python -m evaluate_rag.run \
+  --rag-url http://localhost:8002 \
+  --eval-set data/eval/rag_eval_set.jsonl
+```
+
+The default report path is `data/local/rag-eval-report.json`. If `CONTROL_PLANE_API_URL` is set, the pipeline also registers aggregate results with the control plane as an `EvaluationRun`. The top-level `passed` flag is intended to act as an LLMOps promotion gate before approving prompt, retrieval, or model changes.
+
 ## Claims-Risk Inference API
 
 The inference service loads a trained synthetic claims-risk model from `CLAIMS_RISK_MODEL_URI` or falls back to deterministic rules when no model is configured. It validates feature shape, checks feature freshness, returns reason codes, and sends safe audit and monitoring metadata to the control plane when `CONTROL_PLANE_API_URL` is configured.
@@ -435,6 +447,7 @@ careai-drift-check \
 - [ ] Rollback controls and active model promotion wiring.
 - [x] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [x] RAG API with prompt registry, evaluations, safety checks, and audit logging.
+- [x] GenAI evaluation pipeline with RAG quality, safety, latency, and promotion-gate metrics.
 - [x] Simple TypeScript demo UI skeleton for platform workflows and governance views.
 - [ ] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, PostgreSQL, Redis, Event Hubs, Log Analytics, Application Insights, and Azure AI Search.
 - [x] GitHub Actions CI placeholder under `.github/workflows`.

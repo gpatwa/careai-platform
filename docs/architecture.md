@@ -22,6 +22,7 @@
 
 - `pipelines/train-claims-risk`: generates deterministic synthetic claims-risk data, trains a scikit-learn model, logs parameters/metrics/model artifacts to MLflow, writes control-plane-compatible metadata, and optionally registers the candidate model with `control-plane-api`.
 - `pipelines/ingest-rag`: loads synthetic healthcare-operations Markdown documents, chunks text, generates embeddings through a provider abstraction, and writes either Azure AI Search chunks or a local JSON vector index fallback.
+- `pipelines/evaluate-rag`: runs a synthetic RAG evaluation set against `rag-service`, writes a JSON quality/safety report, and optionally registers aggregate metrics as a control-plane `EvaluationRun`.
 
 ## LLMOps Ingestion
 
@@ -32,6 +33,8 @@ Role-based retrieval is modeled as document-level filtering before prompt constr
 `apps/rag-service` is the LLM gateway. It retrieves authorized chunks, selects an approved prompt from `control-plane-api` when available, otherwise uses a local default prompt, and routes generation to Azure OpenAI chat when configured or a deterministic local mock provider for tests and offline demos. Responses include citations, prompt version, provider metadata, retrieval metadata, groundedness score, safety flags, and the active correlation ID.
 
 Safety controls reject prompt-injection and secret-exfiltration attempts before retrieval. Medical diagnosis or treatment requests are answered only as policy-context responses and flagged for human review. Audit events sent to the control plane include prompt id/version, retrieved source ids, model/provider metadata, role, and safety flags; raw question and answer text are intentionally excluded.
+
+RAG evaluation is the pre-promotion LLMOps gate. The evaluator measures retrieval hit rate, citation coverage, keyword relevance, groundedness, safety flag rate, disallowed-claim rate, latency, and provider token counts when available. Failed thresholds block promotion until the prompt, retrieval index, safety policy, or model configuration is reviewed.
 
 ## Monitoring
 
