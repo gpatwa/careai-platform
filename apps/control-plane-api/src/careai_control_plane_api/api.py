@@ -18,8 +18,10 @@ from careai_control_plane_api.models import (
     DriftSnapshotORM,
     EvaluationRunORM,
     ModelArtifactORM,
+    ModelCardORM,
     ModelErrorEventORM,
     PredictionEventORM,
+    PromptCardORM,
     PromptTemplateORM,
 )
 from careai_control_plane_api.monitoring import (
@@ -43,12 +45,18 @@ from careai_control_plane_api.schemas import (
     EvaluationRunRead,
     ModelArtifactCreate,
     ModelArtifactRead,
+    ModelCardCreate,
+    ModelCardRead,
+    ModelCardUpdate,
     ModelErrorEventCreate,
     ModelErrorEventRead,
     MonitoringSummaryResponse,
     PredictionEventCreate,
     PredictionEventRead,
     PromoteModelRequest,
+    PromptCardCreate,
+    PromptCardRead,
+    PromptCardUpdate,
     PromptTemplateCreate,
     PromptTemplateRead,
 )
@@ -126,6 +134,64 @@ def latest_model_for_name(session: Session, model_name: str) -> ModelArtifactORM
         .order_by(ModelArtifactORM.created_at.desc(), ModelArtifactORM.id.desc())
         .limit(1)
     ).first()
+
+
+def model_card_for(session: Session, model_id: str) -> ModelCardORM | None:
+    return session.scalars(
+        select(ModelCardORM)
+        .where(ModelCardORM.model_id == model_id)
+        .order_by(
+            ModelCardORM.updated_at.desc(), ModelCardORM.created_at.desc(), ModelCardORM.id.desc()
+        )
+        .limit(1)
+    ).first()
+
+
+def prompt_card_for(session: Session, prompt_id: str) -> PromptCardORM | None:
+    return session.scalars(
+        select(PromptCardORM)
+        .where(PromptCardORM.prompt_id == prompt_id)
+        .order_by(
+            PromptCardORM.updated_at.desc(),
+            PromptCardORM.created_at.desc(),
+            PromptCardORM.id.desc(),
+        )
+        .limit(1)
+    ).first()
+
+
+def has_approved_human_approval(session: Session, target_type: str, target_id: str) -> bool:
+    return (
+        session.scalars(
+            select(ApprovalORM)
+            .where(
+                ApprovalORM.target_type == target_type,
+                ApprovalORM.target_id == target_id,
+                ApprovalORM.decision == "approved",
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
+def is_model_production_ready(session: Session, model_id: str) -> tuple[bool, list[str]]:
+    missing: list[str] = []
+    card = model_card_for(session, model_id)
+    if card is None:
+        missing.append("approved_model_card")
+    elif card.approval_status != "approved":
+        missing.append("approved_model_card")
+
+    if not has_approved_human_approval(session, "model", model_id):
+        missing.append("approved_model_governance_decision")
+
+    return not missing, missing
+
+
+def is_prompt_production_ready(session: Session, prompt: PromptTemplateORM) -> bool:
+    card = prompt_card_for(session, prompt.id)
+    return prompt.status == "approved" and card is not None and card.approval_status == "approved"
 
 
 def monitoring_events_query(model_name: str, model_version: str | None = None):
@@ -280,6 +346,100 @@ def get_model(model_id: str, session: SessionDep) -> ModelArtifactORM:
 
 
 @router.post(
+    "/model-cards",
+    response_model=ModelCardRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Governance"],
+    summary="Create a model card",
+    description="Creates a responsible AI model card for a registered synthetic model.",
+)
+def create_model_card(
+    payload: ModelCardCreate,
+    request: Request,
+    session: SessionDep,
+) -> ModelCardORM:
+    if session.get(ModelArtifactORM, payload.model_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    if model_card_for(session, payload.model_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Model card already exists; use PUT to update it",
+        )
+
+    card = ModelCardORM(**payload.model_dump())
+    session.add(card)
+    session.flush()
+    write_audit_event(
+        session,
+        actor=actor_from_request(request),
+        action="model_card.created",
+        target_type="model",
+        target_id=card.model_id,
+        metadata={"card_id": card.id, "approval_status": card.approval_status},
+    )
+    session.commit()
+    session.refresh(card)
+    return card
+
+
+@router.get(
+    "/model-cards",
+    response_model=list[ModelCardRead],
+    tags=["Governance"],
+    summary="List model cards",
+    description="Lists responsible AI model cards.",
+)
+def get_model_cards(session: SessionDep) -> list[ModelCardORM]:
+    return list_records(session, ModelCardORM)
+
+
+@router.get(
+    "/model-cards/{model_id}",
+    response_model=ModelCardRead,
+    tags=["Governance"],
+    summary="Get a model card",
+    description="Retrieves the model card for a registered synthetic model.",
+)
+def get_model_card(model_id: str, session: SessionDep) -> ModelCardORM:
+    card = model_card_for(session, model_id)
+    if card is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model card not found")
+    return card
+
+
+@router.put(
+    "/model-cards/{model_id}",
+    response_model=ModelCardRead,
+    tags=["Governance"],
+    summary="Update a model card",
+    description="Updates responsible AI model card content and approval status.",
+)
+def update_model_card(
+    model_id: str,
+    payload: ModelCardUpdate,
+    request: Request,
+    session: SessionDep,
+) -> ModelCardORM:
+    card = model_card_for(session, model_id)
+    if card is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model card not found")
+
+    for field_name, value in payload.model_dump().items():
+        setattr(card, field_name, value)
+    write_audit_event(
+        session,
+        actor=actor_from_request(request),
+        action="model_card.updated",
+        target_type="model",
+        target_id=model_id,
+        metadata={"card_id": card.id, "approval_status": card.approval_status},
+    )
+    session.commit()
+    session.refresh(card)
+    return card
+
+
+@router.post(
     "/models/{model_id}/promote",
     response_model=ModelArtifactRead,
     tags=["Models"],
@@ -297,6 +457,17 @@ def promote_model(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
 
     previous_stage = model.stage
+    if payload.stage == "production":
+        production_ready, missing_controls = is_model_production_ready(session, model.id)
+        if not production_ready:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Model cannot move to production until governance gates pass.",
+                    "missing_controls": missing_controls,
+                },
+            )
+
     model.stage = payload.stage
     correlation_id = ensure_correlation_id()
     write_audit_event(
@@ -403,6 +574,100 @@ def create_prompt(
     return prompt
 
 
+@router.post(
+    "/prompt-cards",
+    response_model=PromptCardRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Governance"],
+    summary="Create a prompt card",
+    description="Creates a responsible AI prompt card for a registered prompt template.",
+)
+def create_prompt_card(
+    payload: PromptCardCreate,
+    request: Request,
+    session: SessionDep,
+) -> PromptCardORM:
+    if session.get(PromptTemplateORM, payload.prompt_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt not found")
+    if prompt_card_for(session, payload.prompt_id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Prompt card already exists; use PUT to update it",
+        )
+
+    card = PromptCardORM(**payload.model_dump())
+    session.add(card)
+    session.flush()
+    write_audit_event(
+        session,
+        actor=actor_from_request(request),
+        action="prompt_card.created",
+        target_type="prompt",
+        target_id=card.prompt_id,
+        metadata={"card_id": card.id, "approval_status": card.approval_status},
+    )
+    session.commit()
+    session.refresh(card)
+    return card
+
+
+@router.get(
+    "/prompt-cards",
+    response_model=list[PromptCardRead],
+    tags=["Governance"],
+    summary="List prompt cards",
+    description="Lists responsible AI prompt cards.",
+)
+def get_prompt_cards(session: SessionDep) -> list[PromptCardORM]:
+    return list_records(session, PromptCardORM)
+
+
+@router.get(
+    "/prompt-cards/{prompt_id}",
+    response_model=PromptCardRead,
+    tags=["Governance"],
+    summary="Get a prompt card",
+    description="Retrieves the prompt card for a registered prompt template.",
+)
+def get_prompt_card(prompt_id: str, session: SessionDep) -> PromptCardORM:
+    card = prompt_card_for(session, prompt_id)
+    if card is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt card not found")
+    return card
+
+
+@router.put(
+    "/prompt-cards/{prompt_id}",
+    response_model=PromptCardRead,
+    tags=["Governance"],
+    summary="Update a prompt card",
+    description="Updates responsible AI prompt card content and approval status.",
+)
+def update_prompt_card(
+    prompt_id: str,
+    payload: PromptCardUpdate,
+    request: Request,
+    session: SessionDep,
+) -> PromptCardORM:
+    card = prompt_card_for(session, prompt_id)
+    if card is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt card not found")
+
+    for field_name, value in payload.model_dump().items():
+        setattr(card, field_name, value)
+    write_audit_event(
+        session,
+        actor=actor_from_request(request),
+        action="prompt_card.updated",
+        target_type="prompt",
+        target_id=prompt_id,
+        metadata={"card_id": card.id, "approval_status": card.approval_status},
+    )
+    session.commit()
+    session.refresh(card)
+    return card
+
+
 @router.get(
     "/prompts",
     response_model=list[PromptTemplateRead],
@@ -410,8 +675,14 @@ def create_prompt(
     summary="List prompt templates",
     description="Lists prompt templates and governance status.",
 )
-def get_prompts(session: SessionDep) -> list[PromptTemplateORM]:
-    return list_records(session, PromptTemplateORM)
+def get_prompts(
+    session: SessionDep,
+    production_ready_only: bool = Query(default=False),
+) -> list[PromptTemplateORM]:
+    prompts = list_records(session, PromptTemplateORM)
+    if production_ready_only:
+        return [prompt for prompt in prompts if is_prompt_production_ready(session, prompt)]
+    return prompts
 
 
 @router.post(

@@ -36,6 +36,12 @@ Safety controls reject prompt-injection and secret-exfiltration attempts before 
 
 RAG evaluation is the pre-promotion LLMOps gate. The evaluator measures retrieval hit rate, citation coverage, keyword relevance, groundedness, safety flag rate, disallowed-claim rate, latency, and provider token counts when available. Failed thresholds block promotion until the prompt, retrieval index, safety policy, or model configuration is reviewed.
 
+## Governance
+
+Responsible AI controls are first-class control-plane records. Model cards capture intended use, prohibited use, synthetic training data summary, metrics, fairness review, explainability, ownership, reviewer, and approval status. Prompt cards capture intended use, data sources, safety constraints, known failure modes, evaluation summary, owner, and approval status. Markdown templates live under `docs/templates/` for interview review and can be copied into structured API records.
+
+Production gates are enforced at the API boundary. A model cannot move to `production` until it has an approved model card and an approved governance `Approval` record. The RAG gateway asks the control plane for `production_ready_only` prompts, so control-plane prompts are not selected unless the prompt is approved and has an approved prompt card. Local fallback prompts remain available for offline demos and tests.
+
 ## Monitoring
 
 The control plane stores prediction events for synthetic aggregate claims-risk features, scores, risk bands, latency, model version, and correlation IDs. Drift checks compare baseline training feature distributions from model lineage or a request body against recent serving distributions. Numeric utilization features are binned before PSI calculations so training and serving distributions remain stable and interpretable. The demo uses PSI-style metrics with deterministic `green`, `yellow`, and `red` statuses.

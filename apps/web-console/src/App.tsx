@@ -54,9 +54,41 @@ type PromptTemplate = {
   id: string;
   name: string;
   version: string;
+  template_text?: string;
   owner: string;
   safety_notes: string;
   status: string;
+  created_at?: string;
+};
+
+type ModelCard = {
+  id: string;
+  model_id: string;
+  intended_use: string;
+  prohibited_use: string;
+  training_data_summary: string;
+  metrics_summary: Record<string, unknown>;
+  fairness_summary: Record<string, unknown>;
+  explainability_summary: string;
+  owner: string;
+  reviewer: string;
+  approval_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type PromptCard = {
+  id: string;
+  prompt_id: string;
+  intended_use: string;
+  data_sources: string[];
+  safety_constraints: string[];
+  known_failure_modes: string[];
+  evaluation_summary: Record<string, unknown>;
+  owner: string;
+  approval_status: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type EvaluationRun = {
@@ -118,6 +150,8 @@ type PlatformData = {
   auditEvents: AuditEvent[];
   approvals: Approval[];
   prompts: PromptTemplate[];
+  modelCards: ModelCard[];
+  promptCards: PromptCard[];
   evaluations: EvaluationRun[];
   monitoring: MonitoringSummary;
 };
@@ -273,6 +307,65 @@ const mockData: PlatformData = {
       status: "approved"
     }
   ],
+  modelCards: [
+    {
+      id: "model-card-claims-risk-000",
+      model_id: "model-claims-risk-000",
+      intended_use:
+        "Synthetic claims-risk prioritization for operations review and interview demos.",
+      prohibited_use:
+        "Clinical diagnosis, benefit determination, automated denial, or real patient decisions.",
+      training_data_summary:
+        "Deterministic synthetic claims-like records with no real PHI or PII.",
+      metrics_summary: { auc: 0.82, f1: 0.67, calibration: "demo-reviewed" },
+      fairness_summary: { age_bucket_review: "no material synthetic segment gap observed" },
+      explainability_summary: "Reason codes are derived from aggregate utilization features.",
+      owner: "ml-platform-demo",
+      reviewer: "model-risk-reviewer",
+      approval_status: "approved",
+      created_at: "2026-06-15T06:34:00Z",
+      updated_at: "2026-06-15T06:36:00Z"
+    },
+    {
+      id: "model-card-claims-risk-001",
+      model_id: "model-claims-risk-001",
+      intended_use: "Candidate synthetic claims-risk model awaiting governance review.",
+      prohibited_use: "Production use before review, approval, and deployment checks.",
+      training_data_summary: "Synthetic claims-like records generated for local demo testing.",
+      metrics_summary: { auc: 0.87, f1: 0.71 },
+      fairness_summary: { age_bucket_review: "pending" },
+      explainability_summary: "Reason-code review is pending model-risk signoff.",
+      owner: "ml-platform-demo",
+      reviewer: "model-risk-reviewer",
+      approval_status: "draft",
+      created_at: "2026-06-15T07:10:00Z",
+      updated_at: "2026-06-15T07:10:00Z"
+    }
+  ],
+  promptCards: [
+    {
+      id: "prompt-card-rag-001",
+      prompt_id: "local-healthcare-ops-rag",
+      intended_use:
+        "Answer synthetic healthcare operations policy questions with citations and safety flags.",
+      data_sources: ["synthetic policy documents", "synthetic RAG evaluation set"],
+      safety_constraints: [
+        "Require citations",
+        "Reject secret requests",
+        "Flag diagnosis or treatment questions for human review"
+      ],
+      known_failure_modes: ["Missing citation coverage", "Role-filtered document gaps"],
+      evaluation_summary: {
+        retrieval_hit_rate: 1.0,
+        citation_coverage: 0.975,
+        groundedness: 1.0
+      },
+      owner: "llmops-demo",
+      approval_status: "approved",
+      created_at: "2026-06-15T07:18:00Z",
+      updated_at: "2026-06-15T07:19:00Z"
+    }
+  ],
   evaluations: [
     {
       id: "eval-rag-001",
@@ -377,10 +470,15 @@ export function App() {
           ...current,
           models: current.models.map((item) => (item.id === model.id ? promoted : item))
         }));
-      } catch {
-        setLoadState("mock");
-        setStatusMessage("Promotion API unavailable; local mock state updated.");
-        promoteModelLocally(model.id, nextStage);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Promotion request failed.";
+        if (error instanceof TypeError) {
+          setLoadState("mock");
+          setStatusMessage("Promotion API unavailable; local mock state updated.");
+          promoteModelLocally(model.id, nextStage);
+        } else {
+          setStatusMessage(`Promotion blocked: ${message}`);
+        }
       } finally {
         setPromotingModelId(null);
       }
@@ -485,7 +583,9 @@ export function App() {
           approvals={data.approvals}
           auditEvents={data.auditEvents}
           evaluations={data.evaluations}
+          modelCards={data.modelCards}
           models={data.models}
+          promptCards={data.promptCards}
           prompts={data.prompts}
         />
       ) : null}
@@ -818,17 +918,59 @@ function GovernancePage({
   approvals,
   auditEvents,
   evaluations,
+  modelCards,
   models,
+  promptCards,
   prompts
 }: {
   approvals: Approval[];
   auditEvents: AuditEvent[];
   evaluations: EvaluationRun[];
+  modelCards: ModelCard[];
   models: ModelArtifact[];
+  promptCards: PromptCard[];
   prompts: PromptTemplate[];
 }) {
+  const approvalsByTarget = new Set(
+    approvals
+      .filter((approval) => approval.decision === "approved")
+      .map((approval) => `${approval.target_type}:${approval.target_id}`)
+  );
+  const modelCardsByModel = new Map(modelCards.map((card) => [card.model_id, card]));
+  const promptCardsByPrompt = new Map(promptCards.map((card) => [card.prompt_id, card]));
+
   return (
     <section className="page-grid">
+      <Panel title="Release Gates" wide>
+        <DataTable
+          columns={["Asset", "Card", "Approval", "Production Ready"]}
+          rows={[
+            ...models.map((model) => {
+              const card = modelCardsByModel.get(model.id);
+              const cardApproved = card?.approval_status === "approved";
+              const approvalReady = approvalsByTarget.has(`model:${model.id}`);
+              return [
+                `${model.name} ${model.version}`,
+                cardApproved ? "approved" : card ? card.approval_status : "missing",
+                approvalReady ? "approved" : "missing",
+                cardApproved && approvalReady ? "yes" : "blocked"
+              ];
+            }),
+            ...prompts.map((prompt) => {
+              const card = promptCardsByPrompt.get(prompt.id);
+              const cardApproved = card?.approval_status === "approved";
+              const promptApproved = prompt.status === "approved";
+              return [
+                `${prompt.name} ${prompt.version}`,
+                cardApproved ? "approved" : card ? card.approval_status : "missing",
+                promptApproved ? "approved prompt" : prompt.status,
+                cardApproved && promptApproved ? "yes" : "blocked"
+              ];
+            })
+          ]}
+        />
+      </Panel>
+
       <Panel title="Approvals">
         <DataTable
           columns={["Target", "Approver", "Decision", "Notes"]}
@@ -847,25 +989,33 @@ function GovernancePage({
 
       <Panel title="Model Cards Summary">
         <DataTable
-          columns={["Name", "Version", "Stage", "Metric"]}
-          rows={models.map((model) => [
-            model.name,
-            model.version,
-            model.stage,
-            summarizeMetrics(model.metrics_json)
-          ])}
+          columns={["Model", "Owner", "Reviewer", "Status", "Use"]}
+          rows={modelCards.map((card) => {
+            const model = models.find((item) => item.id === card.model_id);
+            return [
+              model ? `${model.name} ${model.version}` : card.model_id,
+              card.owner,
+              card.reviewer,
+              card.approval_status,
+              card.intended_use
+            ];
+          })}
         />
       </Panel>
 
       <Panel title="Prompt Cards Summary">
         <DataTable
-          columns={["Prompt", "Version", "Status", "Safety Notes"]}
-          rows={prompts.map((prompt) => [
-            prompt.name,
-            prompt.version,
-            prompt.status,
-            prompt.safety_notes
-          ])}
+          columns={["Prompt", "Owner", "Status", "Sources", "Safety"]}
+          rows={promptCards.map((card) => {
+            const prompt = prompts.find((item) => item.id === card.prompt_id);
+            return [
+              prompt ? `${prompt.name} ${prompt.version}` : card.prompt_id,
+              card.owner,
+              card.approval_status,
+              card.data_sources.join(", "),
+              card.safety_constraints.join(", ")
+            ];
+          })}
         />
       </Panel>
 
@@ -985,12 +1135,23 @@ function LoadingPanel() {
 }
 
 async function loadPlatformData(apiConfig: ApiConfig): Promise<PlatformData> {
-  const [models, deployments, auditEvents, approvals, prompts, evaluations] = await Promise.all([
+  const [
+    models,
+    deployments,
+    auditEvents,
+    approvals,
+    prompts,
+    modelCards,
+    promptCards,
+    evaluations
+  ] = await Promise.all([
     fetchJson<ModelArtifact[]>(`${apiConfig.controlPlaneUrl}/models`),
     fetchJson<Deployment[]>(`${apiConfig.controlPlaneUrl}/deployments`),
     fetchJson<AuditEvent[]>(`${apiConfig.controlPlaneUrl}/audit-events`),
     fetchJson<Approval[]>(`${apiConfig.controlPlaneUrl}/approvals`),
     fetchJson<PromptTemplate[]>(`${apiConfig.controlPlaneUrl}/prompts`),
+    fetchJson<ModelCard[]>(`${apiConfig.controlPlaneUrl}/model-cards`),
+    fetchJson<PromptCard[]>(`${apiConfig.controlPlaneUrl}/prompt-cards`),
     fetchJson<EvaluationRun[]>(`${apiConfig.controlPlaneUrl}/evaluations`)
   ]);
   const modelName = models.find((model) => model.stage === "production")?.name ?? "claims-risk";
@@ -1004,6 +1165,8 @@ async function loadPlatformData(apiConfig: ApiConfig): Promise<PlatformData> {
     auditEvents: auditEvents.length ? auditEvents : mockData.auditEvents,
     approvals: approvals.length ? approvals : mockData.approvals,
     prompts: prompts.length ? prompts : mockData.prompts,
+    modelCards: modelCards.length ? modelCards : mockData.modelCards,
+    promptCards: promptCards.length ? promptCards : mockData.promptCards,
     evaluations: evaluations.length ? evaluations : mockData.evaluations,
     monitoring
   };
@@ -1012,7 +1175,7 @@ async function loadPlatformData(apiConfig: ApiConfig): Promise<PlatformData> {
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw new Error(await responseErrorMessage(response));
   }
   return response.json() as Promise<T>;
 }
@@ -1024,9 +1187,31 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
     method: "POST"
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw new Error(await responseErrorMessage(response));
   }
   return response.json() as Promise<T>;
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const fallback = `${response.status} ${response.statusText}`;
+  try {
+    const body = (await response.json()) as {
+      detail?: string | { message?: string; missing_controls?: string[] };
+      message?: string;
+      missing_controls?: string[];
+    };
+    const detail = body.detail;
+    if (typeof detail === "string") return `${fallback}: ${detail}`;
+    const message = detail?.message ?? body.message;
+    const missingControls = detail?.missing_controls ?? body.missing_controls ?? [];
+    if (message && missingControls.length) {
+      return `${message} Missing controls: ${missingControls.join(", ")}`;
+    }
+    if (message) return message;
+  } catch {
+    return fallback;
+  }
+  return fallback;
 }
 
 function countModelsByStage(models: ModelArtifact[]): Record<ModelStage, number> {
@@ -1078,12 +1263,6 @@ function formatDate(value: string): string {
     minute: "2-digit",
     month: "short"
   }).format(new Date(value));
-}
-
-function summarizeMetrics(metrics: Record<string, unknown>): string {
-  const firstMetric = Object.entries(metrics)[0];
-  if (!firstMetric) return "n/a";
-  return `${firstMetric[0]} ${formatMetricValue(firstMetric[1])}`;
 }
 
 function mockRagResponse(role: string): RagResponse {

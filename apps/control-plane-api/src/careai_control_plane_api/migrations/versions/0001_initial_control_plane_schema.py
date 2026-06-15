@@ -36,6 +36,10 @@ def created_at() -> sa.Column:
     return sa.Column("created_at", sa.DateTime(timezone=True), nullable=False)
 
 
+def updated_at() -> sa.Column:
+    return sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False)
+
+
 def upgrade() -> None:
     create_table_if_missing(
         "dataset_assets",
@@ -69,6 +73,24 @@ def upgrade() -> None:
     )
 
     create_table_if_missing(
+        "model_cards",
+        standard_id(),
+        sa.Column("model_id", sa.String(length=36), nullable=False),
+        sa.Column("intended_use", sa.Text(), nullable=False),
+        sa.Column("prohibited_use", sa.Text(), nullable=False),
+        sa.Column("training_data_summary", sa.Text(), nullable=False),
+        sa.Column("metrics_summary", sa.JSON(), nullable=False),
+        sa.Column("fairness_summary", sa.JSON(), nullable=False),
+        sa.Column("explainability_summary", sa.Text(), nullable=False),
+        sa.Column("owner", sa.String(length=160), nullable=False),
+        sa.Column("reviewer", sa.String(length=160), nullable=False),
+        sa.Column("approval_status", sa.String(length=80), nullable=False),
+        created_at(),
+        updated_at(),
+    )
+    create_indexes("model_cards", ["model_id", "approval_status"])
+
+    create_table_if_missing(
         "deployments",
         standard_id(),
         sa.Column("model_id", sa.String(length=36), nullable=False),
@@ -93,6 +115,22 @@ def upgrade() -> None:
         created_at(),
     )
     create_indexes("prompt_templates", ["name", "version", "status"])
+
+    create_table_if_missing(
+        "prompt_cards",
+        standard_id(),
+        sa.Column("prompt_id", sa.String(length=36), nullable=False),
+        sa.Column("intended_use", sa.Text(), nullable=False),
+        sa.Column("data_sources", sa.JSON(), nullable=False),
+        sa.Column("safety_constraints", sa.JSON(), nullable=False),
+        sa.Column("known_failure_modes", sa.JSON(), nullable=False),
+        sa.Column("evaluation_summary", sa.JSON(), nullable=False),
+        sa.Column("owner", sa.String(length=160), nullable=False),
+        sa.Column("approval_status", sa.String(length=80), nullable=False),
+        created_at(),
+        updated_at(),
+    )
+    create_indexes("prompt_cards", ["prompt_id", "approval_status"])
 
     create_table_if_missing(
         "evaluation_runs",
@@ -194,8 +232,10 @@ def downgrade() -> None:
         "audit_events",
         "approvals",
         "evaluation_runs",
+        "prompt_cards",
         "prompt_templates",
         "deployments",
+        "model_cards",
         "model_artifacts",
         "dataset_assets",
     ]:

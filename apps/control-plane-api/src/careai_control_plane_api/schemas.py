@@ -7,6 +7,7 @@ ModelStage = Literal["dev", "candidate", "staging", "approved", "production", "d
 RiskBand = Literal["low", "medium", "high"]
 DriftStatus = Literal["green", "yellow", "red"]
 SloStatus = Literal["healthy", "breached", "unknown"]
+CardApprovalStatus = Literal["draft", "in_review", "approved", "rejected"]
 
 
 class DatasetAssetCreate(BaseModel):
@@ -46,6 +47,43 @@ class ModelArtifactRead(ModelArtifactCreate):
     created_at: datetime
 
 
+class ModelCardCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str = Field(..., description="Model artifact identifier covered by this card.")
+    intended_use: str = Field(..., description="Approved use cases for this synthetic model.")
+    prohibited_use: str = Field(..., description="Uses that are not allowed.")
+    training_data_summary: str = Field(..., description="Synthetic training data summary.")
+    metrics_summary: dict[str, Any] = Field(default_factory=dict)
+    fairness_summary: dict[str, Any] = Field(default_factory=dict)
+    explainability_summary: str = Field(..., description="Explainability and reason-code summary.")
+    owner: str = Field(..., description="Responsible owner or team.")
+    reviewer: str = Field(..., description="Responsible AI or model-risk reviewer.")
+    approval_status: CardApprovalStatus = Field(default="draft")
+
+
+class ModelCardUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intended_use: str
+    prohibited_use: str
+    training_data_summary: str
+    metrics_summary: dict[str, Any] = Field(default_factory=dict)
+    fairness_summary: dict[str, Any] = Field(default_factory=dict)
+    explainability_summary: str
+    owner: str
+    reviewer: str
+    approval_status: CardApprovalStatus
+
+
+class ModelCardRead(ModelCardCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class PromoteModelRequest(BaseModel):
     stage: ModelStage = Field(..., description="Target stage for model promotion.")
     actor: str | None = Field(default=None, description="Optional actor override for audit.")
@@ -82,6 +120,39 @@ class PromptTemplateRead(PromptTemplateCreate):
 
     id: str
     created_at: datetime
+
+
+class PromptCardCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_id: str = Field(..., description="Prompt template identifier covered by this card.")
+    intended_use: str = Field(..., description="Approved use cases for this prompt.")
+    data_sources: list[str] = Field(default_factory=list)
+    safety_constraints: list[str] = Field(default_factory=list)
+    known_failure_modes: list[str] = Field(default_factory=list)
+    evaluation_summary: dict[str, Any] = Field(default_factory=dict)
+    owner: str = Field(..., description="Responsible owner or team.")
+    approval_status: CardApprovalStatus = Field(default="draft")
+
+
+class PromptCardUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intended_use: str
+    data_sources: list[str] = Field(default_factory=list)
+    safety_constraints: list[str] = Field(default_factory=list)
+    known_failure_modes: list[str] = Field(default_factory=list)
+    evaluation_summary: dict[str, Any] = Field(default_factory=dict)
+    owner: str
+    approval_status: CardApprovalStatus
+
+
+class PromptCardRead(PromptCardCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class EvaluationRunCreate(BaseModel):

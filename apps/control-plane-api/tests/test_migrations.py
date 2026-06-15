@@ -15,6 +15,8 @@ def test_upgrade_database_creates_model_error_events_table(tmp_path) -> None:
     engine = create_engine(database_url)
     inspector = inspect(engine)
     assert "model_error_events" in inspector.get_table_names()
+    assert "model_cards" in inspector.get_table_names()
+    assert "prompt_cards" in inspector.get_table_names()
     assert "prediction_events" in inspector.get_table_names()
     assert "alembic_version" in inspector.get_table_names()
 
@@ -32,4 +34,6 @@ def test_prepare_schema_uses_migrations_for_persistent_database(tmp_path) -> Non
 
     inspector = inspect(database.engine)
     assert "model_error_events" in inspector.get_table_names()
+    assert "model_cards" in inspector.get_table_names()
+    assert "prompt_cards" in inspector.get_table_names()
     assert "alembic_version" in inspector.get_table_names()

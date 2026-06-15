@@ -19,6 +19,7 @@ def test_openapi_includes_control_plane_tags() -> None:
         "Prompts",
         "Evaluations",
         "Approvals",
+        "Governance",
         "Audit",
         "Monitoring",
     }
@@ -151,6 +152,176 @@ def test_create_and_list_deployments_prompts_evaluations_and_approvals() -> None
         "evaluation.created",
         "approval.created",
     } <= audit_actions
+
+
+def create_demo_model(client: TestClient) -> str:
+    dataset_response = client.post(
+        "/datasets",
+        json={
+            "name": "synthetic-claims",
+            "version": "2026.06",
+            "owner": "platform-demo",
+            "schema_uri": "azurite://schemas/claims.json",
+            "storage_uri": "azurite://datasets/synthetic-claims",
+            "pii_classification": "synthetic-no-phi",
+        },
+    )
+    dataset_id = dataset_response.json()["id"]
+    model_response = client.post(
+        "/models",
+        json={
+            "name": "claims-risk",
+            "version": "0.1.0",
+            "framework": "scikit-learn",
+            "artifact_uri": "azurite://models/claims-risk/0.1.0",
+            "training_dataset_id": dataset_id,
+            "metrics_json": {"auc": 0.91},
+            "lineage_json": {"run_id": "demo-run-001"},
+            "stage": "approved",
+        },
+    )
+    return model_response.json()["id"]
+
+
+def approved_model_card_payload(model_id: str) -> dict:
+    return {
+        "model_id": model_id,
+        "intended_use": "Synthetic claims-risk triage for operations demos.",
+        "prohibited_use": "Do not use for real clinical or coverage decisions.",
+        "training_data_summary": "Deterministic synthetic claims-like features only.",
+        "metrics_summary": {"auc": 0.91, "f1": 0.82},
+        "fairness_summary": {"age_bucket": "Synthetic segment review completed."},
+        "explainability_summary": "Reason codes are derived from utilization features.",
+        "owner": "ml-platform",
+        "reviewer": "model-risk-reviewer",
+        "approval_status": "approved",
+    }
+
+
+def test_model_production_gate_requires_approved_card_and_approval() -> None:
+    with make_client() as client:
+        model_id = create_demo_model(client)
+
+        blocked_without_card = client.post(
+            f"/models/{model_id}/promote",
+            json={
+                "stage": "production",
+                "actor": "model-risk-reviewer",
+                "notes": "Attempt production before governance controls.",
+            },
+        )
+        assert blocked_without_card.status_code == 409
+        assert "approved_model_card" in blocked_without_card.json()["detail"]["missing_controls"]
+
+        card_response = client.post("/model-cards", json=approved_model_card_payload(model_id))
+        assert card_response.status_code == 201
+
+        blocked_without_approval = client.post(
+            f"/models/{model_id}/promote",
+            json={
+                "stage": "production",
+                "actor": "model-risk-reviewer",
+                "notes": "Attempt production before approval record.",
+            },
+        )
+        assert blocked_without_approval.status_code == 409
+        assert (
+            "approved_model_governance_decision"
+            in blocked_without_approval.json()["detail"]["missing_controls"]
+        )
+
+        approval_response = client.post(
+            "/approvals",
+            json={
+                "target_type": "model",
+                "target_id": model_id,
+                "approver": "model-risk-reviewer",
+                "decision": "approved",
+                "notes": "Responsible AI card reviewed.",
+            },
+        )
+        assert approval_response.status_code == 201
+
+        promoted_response = client.post(
+            f"/models/{model_id}/promote",
+            json={
+                "stage": "production",
+                "actor": "model-risk-reviewer",
+                "notes": "Governance controls are complete.",
+            },
+        )
+        card_read_response = client.get(f"/model-cards/{model_id}")
+
+    assert promoted_response.status_code == 200
+    assert promoted_response.json()["stage"] == "production"
+    assert card_read_response.status_code == 200
+    assert card_read_response.json()["approval_status"] == "approved"
+
+
+def test_model_card_can_be_updated() -> None:
+    with make_client() as client:
+        model_id = create_demo_model(client)
+        create_response = client.post(
+            "/model-cards",
+            json={**approved_model_card_payload(model_id), "approval_status": "draft"},
+        )
+        assert create_response.status_code == 201
+
+        update_payload = approved_model_card_payload(model_id)
+        update_payload.pop("model_id")
+        update_response = client.put(f"/model-cards/{model_id}", json=update_payload)
+
+    assert update_response.status_code == 200
+    assert update_response.json()["approval_status"] == "approved"
+
+
+def prompt_card_payload(prompt_id: str, approval_status: str = "approved") -> dict:
+    return {
+        "prompt_id": prompt_id,
+        "intended_use": "Synthetic healthcare operations policy Q&A.",
+        "data_sources": ["data/synthetic_docs"],
+        "safety_constraints": ["Require citations", "Reject hidden prompt requests"],
+        "known_failure_modes": ["Insufficient context can require human review"],
+        "evaluation_summary": {"groundedness": 1.0, "citation_coverage": 0.97},
+        "owner": "llm-platform",
+        "approval_status": approval_status,
+    }
+
+
+def test_prompt_production_ready_filter_requires_approved_prompt_card() -> None:
+    with make_client() as client:
+        prompt_response = client.post(
+            "/prompts",
+            json={
+                "name": "healthcare-ops-rag",
+                "version": "local-v1",
+                "template_text": "Answer from synthetic context: {context}",
+                "owner": "llm-platform",
+                "safety_notes": "Requires citations.",
+                "status": "approved",
+            },
+        )
+        prompt_id = prompt_response.json()["id"]
+
+        uncarded_response = client.get("/prompts?production_ready_only=true")
+        assert uncarded_response.status_code == 200
+        assert uncarded_response.json() == []
+
+        draft_card_response = client.post(
+            "/prompt-cards",
+            json=prompt_card_payload(prompt_id, approval_status="draft"),
+        )
+        assert draft_card_response.status_code == 201
+        draft_ready_response = client.get("/prompts?production_ready_only=true")
+        assert draft_ready_response.json() == []
+
+        update_payload = prompt_card_payload(prompt_id, approval_status="approved")
+        update_payload.pop("prompt_id")
+        update_response = client.put(f"/prompt-cards/{prompt_id}", json=update_payload)
+        ready_response = client.get("/prompts?production_ready_only=true")
+
+    assert update_response.status_code == 200
+    assert [prompt["id"] for prompt in ready_response.json()] == [prompt_id]
 
 
 def test_create_external_audit_event() -> None:

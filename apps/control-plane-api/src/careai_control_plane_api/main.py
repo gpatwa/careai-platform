@@ -47,6 +47,7 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
             {"name": "Prompts", "description": "Prompt template registry and safety notes."},
             {"name": "Evaluations", "description": "Evaluation metrics and reports."},
             {"name": "Approvals", "description": "Human approval decisions."},
+            {"name": "Governance", "description": "Responsible AI cards and release gates."},
             {"name": "Audit", "description": "Immutable-style audit event trail."},
             {"name": "Monitoring", "description": "Prediction events, drift, and model telemetry."},
         ],

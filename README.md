@@ -175,7 +175,7 @@ Demo flow:
 3. Open Models, select `claims-risk`, and use the promote button to walk through `dev -> candidate -> staging -> approved -> production`.
 4. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
 5. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
-6. Open Governance to show approvals, audit events, model card summaries, prompt card summaries, and evaluation runs.
+6. Open Governance to show release gates, approvals, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
 
 Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 
@@ -229,6 +229,43 @@ curl -s -X POST http://localhost:8000/models/<model-id>/promote \
     "notes": "Synthetic evaluation passed and approval is recorded."
   }'
 ```
+
+Production promotion is gated. The model must have an approved model card and an approved governance decision:
+
+```bash
+curl -s -X POST http://localhost:8000/model-cards \
+  -H 'content-type: application/json' \
+  -H 'x-actor: model-risk-reviewer' \
+  -d '{
+    "model_id": "<model-id>",
+    "intended_use": "Synthetic claims-risk prioritization for operations review.",
+    "prohibited_use": "Clinical diagnosis, automated denial, or real patient decisions.",
+    "training_data_summary": "Synthetic claims-like records generated for the demo.",
+    "metrics_summary": {"auc": 0.91, "f1": 0.84},
+    "fairness_summary": {"age_bucket_review": "synthetic segment review passed"},
+    "explainability_summary": "Reason codes use aggregate utilization features.",
+    "owner": "ml-platform-demo",
+    "reviewer": "model-risk-reviewer",
+    "approval_status": "approved"
+  }'
+
+curl -s -X POST http://localhost:8000/approvals \
+  -H 'content-type: application/json' \
+  -H 'x-actor: model-risk-reviewer' \
+  -d '{
+    "target_type": "model",
+    "target_id": "<model-id>",
+    "approver": "model-risk-reviewer",
+    "decision": "approved",
+    "notes": "Model card and synthetic evaluation reviewed."
+  }'
+
+curl -s -X POST http://localhost:8000/models/<model-id>/promote \
+  -H 'content-type: application/json' \
+  -d '{"stage": "production", "actor": "model-risk-reviewer"}'
+```
+
+Prompt templates used by the production RAG gateway must be approved and have an approved prompt card. Offline demos keep a local fallback prompt, but control-plane prompts are filtered through `GET /prompts?production_ready_only=true`.
 
 ## Claims-Risk Training Pipeline
 
@@ -497,6 +534,7 @@ careai-event-consumer \
 - No real patient data, PHI, PII, credentials, or proprietary branding.
 - Structured JSON logs with sensitive-looking values redacted.
 - RBAC placeholders, audit trails, lineage, reproducibility metadata, safety checks, data-quality checks, drift monitoring, and human-in-the-loop flags are first-class demo concerns.
+- Model cards, prompt cards, approval records, and production release gates demonstrate responsible AI controls without real PHI.
 
 ## Roadmap
 
@@ -514,4 +552,5 @@ careai-event-consumer \
 - [x] GitHub Actions CI placeholder under `.github/workflows`.
 - [x] Optional Azure ML workspace integration in Terraform.
 - [x] Event Hubs-compatible event publishing and local consumer abstraction.
+- [x] Responsible AI model cards, prompt cards, and production governance gates.
 - [ ] Optional AKS and Helm deployment extension.

@@ -83,7 +83,10 @@ class PromptRegistry:
 
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
-                response = client.get(f"{self.control_plane_url}/prompts")
+                response = client.get(
+                    f"{self.control_plane_url}/prompts",
+                    params={"production_ready_only": "true"},
+                )
                 response.raise_for_status()
                 rows = response.json()
         except httpx.HTTPError as exc:

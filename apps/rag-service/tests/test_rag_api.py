@@ -270,3 +270,49 @@ def test_audit_client_sends_safe_metadata(monkeypatch) -> None:
     assert captured["json"]["target_type"] == "rag_query"
     assert "question" not in captured["json"]["metadata_json"]
     assert "answer" not in captured["json"]["metadata_json"]
+
+
+def test_prompt_registry_fetches_only_production_ready_prompts(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": "prompt-ready",
+                    "name": "Ready Prompt",
+                    "version": "v1",
+                    "template_text": "Answer from context: {context}",
+                    "owner": "llm-platform",
+                    "safety_notes": "Requires citations.",
+                    "status": "approved",
+                }
+            ]
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def get(self, url: str, params: dict[str, str]):
+            captured["url"] = url
+            captured["params"] = params
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_rag_service.prompts.httpx.Client", FakeClient)
+
+    prompt = PromptRegistry("http://control-plane:8000").select_prompt()
+
+    assert prompt.id == "prompt-ready"
+    assert captured == {
+        "url": "http://control-plane:8000/prompts",
+        "params": {"production_ready_only": "true"},
+    }

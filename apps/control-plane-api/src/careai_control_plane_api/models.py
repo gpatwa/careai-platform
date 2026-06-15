@@ -45,6 +45,28 @@ class ModelArtifactORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class ModelCardORM(Base):
+    __tablename__ = "model_cards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_id: Mapped[str] = mapped_column(String(36), index=True)
+    intended_use: Mapped[str] = mapped_column(Text)
+    prohibited_use: Mapped[str] = mapped_column(Text)
+    training_data_summary: Mapped[str] = mapped_column(Text)
+    metrics_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    fairness_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    explainability_summary: Mapped[str] = mapped_column(Text)
+    owner: Mapped[str] = mapped_column(String(160))
+    reviewer: Mapped[str] = mapped_column(String(160))
+    approval_status: Mapped[str] = mapped_column(String(80), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
 class DeploymentORM(Base):
     __tablename__ = "deployments"
 
@@ -69,6 +91,26 @@ class PromptTemplateORM(Base):
     safety_notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(80), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class PromptCardORM(Base):
+    __tablename__ = "prompt_cards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    prompt_id: Mapped[str] = mapped_column(String(36), index=True)
+    intended_use: Mapped[str] = mapped_column(Text)
+    data_sources: Mapped[list] = mapped_column(JSON, default=list)
+    safety_constraints: Mapped[list] = mapped_column(JSON, default=list)
+    known_failure_modes: Mapped[list] = mapped_column(JSON, default=list)
+    evaluation_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    owner: Mapped[str] = mapped_column(String(160))
+    approval_status: Mapped[str] = mapped_column(String(80), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
 
 
 class EvaluationRunORM(Base):

@@ -114,6 +114,31 @@ python -m evaluate_rag.run \
 
 The report is written to `data/local/rag-eval-report.json` by default. Review `retrieval_hit_rate`, `citation_coverage`, `keyword_relevance`, `groundedness`, `safety_flag_rate`, `disallowed_claim_rate`, and latency metrics before promoting prompt or retrieval changes. If the control plane URL is configured, the same aggregate metrics are posted to `/evaluations`.
 
+## Governance Gates
+
+Create or review model cards and prompt cards before production use:
+
+```bash
+curl http://localhost:8000/model-cards | jq
+curl http://localhost:8000/prompt-cards | jq
+```
+
+Production model promotion requires both an approved model card and an approved `Approval` record for the model. A blocked promotion returns HTTP 409 with the missing controls.
+
+```bash
+curl -X POST http://localhost:8000/models/<model-id>/promote \
+  -H "content-type: application/json" \
+  -d '{"stage":"production","actor":"model-risk-reviewer"}' | jq
+```
+
+Production RAG prompt selection uses only prompts returned by:
+
+```bash
+curl "http://localhost:8000/prompts?production_ready_only=true" | jq
+```
+
+Use `docs/templates/model_card_template.md` and `docs/templates/prompt_card_template.md` as review checklists. Keep all examples synthetic and avoid raw PHI/PII-like values in notes, cards, audit metadata, or screenshots.
+
 ## Shutdown
 
 ```bash
