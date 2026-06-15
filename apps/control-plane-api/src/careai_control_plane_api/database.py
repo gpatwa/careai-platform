@@ -33,6 +33,17 @@ class Database:
     def create_all(self) -> None:
         Base.metadata.create_all(bind=self.engine)
 
+    def upgrade(self) -> None:
+        from careai_control_plane_api.migration_runner import upgrade_database
+
+        upgrade_database(self.database_url)
+
+    def prepare_schema(self) -> None:
+        if self.database_url == "sqlite:///:memory:":
+            self.create_all()
+            return
+        self.upgrade()
+
     def session(self) -> Generator[Session, None, None]:
         db = self.session_factory()
         try:
@@ -52,4 +63,3 @@ class Database:
             return create_engine(database_url, **kwargs)
 
         return create_engine(database_url, pool_pre_ping=True)
-

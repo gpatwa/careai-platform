@@ -26,7 +26,7 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if create_schema:
-            database.create_all()
+            database.prepare_schema()
         yield
 
     application = FastAPI(

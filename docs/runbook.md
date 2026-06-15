@@ -6,6 +6,7 @@
 make setup
 cp .env.example .env
 make local-up
+make db-upgrade
 ```
 
 Run the services locally:

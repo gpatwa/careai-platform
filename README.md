@@ -106,6 +106,12 @@ Start local platform dependencies:
 make local-up
 ```
 
+Apply control-plane database migrations:
+
+```bash
+make db-upgrade
+```
+
 Run the API services:
 
 ```bash
