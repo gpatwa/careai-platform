@@ -186,6 +186,8 @@ scripts/demo_azure_smoke_test.sh
 
 The web console is a TypeScript/Vite interview dashboard for the control plane, MLOps lifecycle, LLMOps lifecycle, monitoring, and governance views. It tries the local APIs first and falls back to synthetic mock data if one of the services is offline, which keeps the interview flow usable while infrastructure is starting.
 
+For the final production-readiness summary, known limitations, and next production steps, see [docs/final_architecture_review.md](docs/final_architecture_review.md).
+
 Demo flow:
 
 1. Open `http://localhost:3000`.

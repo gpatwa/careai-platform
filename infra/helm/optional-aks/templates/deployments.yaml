@@ -1,0 +1,87 @@
+{{- $root := . -}}
+{{- $services := dict
+  "control-plane-api" .Values.controlPlaneApi
+  "inference-service" .Values.inferenceService
+  "rag-service" .Values.ragService
+  "web-console" .Values.webConsole
+-}}
+{{- range $name, $service := $services }}
+{{- if $service.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "careai.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "careai.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "careai.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "careai.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+        careai.io/data-policy: synthetic-only
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $service.image.repository }}:{{ $service.image.tag }}"
+          imagePullPolicy: {{ $root.Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $service.port }}
+              protocol: TCP
+          {{- if $service.env }}
+          env:
+            {{- range $envName, $envValue := $service.env }}
+            - name: {{ $envName }}
+              value: {{ $envValue | quote }}
+            {{- end }}
+            - name: ENVIRONMENT
+              value: {{ $root.Values.global.environment | quote }}
+          {{- else }}
+          env:
+            - name: ENVIRONMENT
+              value: {{ $root.Values.global.environment | quote }}
+          {{- end }}
+          {{- if ne $name "web-console" }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- else }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          {{- end }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+{{- end }}
+{{- end }}

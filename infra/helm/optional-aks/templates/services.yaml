@@ -1,0 +1,29 @@
+{{- $root := . -}}
+{{- $services := dict
+  "control-plane-api" .Values.controlPlaneApi
+  "inference-service" .Values.inferenceService
+  "rag-service" .Values.ragService
+  "web-console" .Values.webConsole
+-}}
+{{- range $name, $service := $services }}
+{{- if $service.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "careai.fullname" $root }}-{{ $name }}
+  labels:
+    {{- include "careai.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "careai.selectorLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}

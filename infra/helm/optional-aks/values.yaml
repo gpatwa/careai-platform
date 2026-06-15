@@ -1,0 +1,48 @@
+global:
+  imagePullPolicy: IfNotPresent
+  environment: demo
+
+controlPlaneApi:
+  enabled: true
+  image:
+    repository: careai/control-plane-api
+    tag: latest
+  port: 8000
+  env:
+    SERVICE_NAME: control-plane-api
+    SERVICE_PORT: "8000"
+
+inferenceService:
+  enabled: true
+  image:
+    repository: careai/inference-service
+    tag: latest
+  port: 8001
+  env:
+    SERVICE_NAME: inference-service
+    SERVICE_PORT: "8001"
+    CONTROL_PLANE_API_URL: http://careai-platform-control-plane-api:8000
+    CLAIMS_RISK_FEATURE_VERSION: claims-risk-features-v1
+    INFERENCE_AUDIT_ENABLED: "true"
+    INFERENCE_MONITORING_ENABLED: "true"
+
+ragService:
+  enabled: true
+  image:
+    repository: careai/rag-service
+    tag: latest
+  port: 8002
+  env:
+    SERVICE_NAME: rag-service
+    SERVICE_PORT: "8002"
+    CONTROL_PLANE_API_URL: http://careai-platform-control-plane-api:8000
+    RAG_DOCS_DIR: data/synthetic_docs
+    RAG_LOCAL_INDEX_PATH: data/local/rag-index.json
+    RAG_AUDIT_ENABLED: "true"
+
+webConsole:
+  enabled: true
+  image:
+    repository: careai/web-console
+    tag: latest
+  port: 8080
