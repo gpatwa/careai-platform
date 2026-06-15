@@ -65,6 +65,22 @@ def test_correlation_id_header_is_propagated() -> None:
     assert response.headers["x-correlation-id"] == "corr-rag"
 
 
+def test_rag_query_allows_web_console_cors_preflight() -> None:
+    with TestClient(app_with_fixed_retriever()) as client:
+        response = client.options(
+            "/rag/query",
+            headers={
+                "origin": "http://localhost:3000",
+                "access-control-request-method": "POST",
+                "access-control-request-headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
 def test_role_filter_excludes_unauthorized_documents(tmp_path: Path) -> None:
     retriever = LocalVectorRetriever(
         index_path=tmp_path / "rag-index.json",

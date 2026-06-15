@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import perf_counter
@@ -14,6 +15,7 @@ from careai_common.events import EventPublisher, build_event, event_publisher_fr
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from careai_inference_service.audit import AuditClient
 from careai_inference_service.model_manager import InferenceSettings, ModelManager
@@ -33,6 +35,14 @@ from careai_inference_service.scoring import (
 settings = load_settings("inference-service", 8001)
 setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
+
+
+def cors_allowed_origins() -> list[str]:
+    configured = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
 async def correlation_middleware(request: Request, call_next) -> Response:
@@ -74,6 +84,12 @@ def create_app(
             {"name": "Predictions", "description": "Synthetic claims-risk predictions."},
             {"name": "Models", "description": "Active model metadata and reload controls."},
         ],
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_allowed_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.state.inference_settings = runtime_settings
     application.state.model_manager = model_manager

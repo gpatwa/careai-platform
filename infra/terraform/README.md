@@ -172,6 +172,7 @@ terraform output -raw event_hub_name
 | `CONTROL_PLANE_URL` | `container_apps_urls.control_plane_api`. |
 | `INFERENCE_URL` | `container_apps_urls.inference_service`. |
 | `RAG_URL` | `container_apps_urls.rag_service`. |
+| `WEB_CONSOLE_URL` | `container_apps_urls.web_console`; used for API CORS. |
 | `AZURE_AI_SEARCH_ENDPOINT` | Terraform `azure_ai_search_endpoint`, when using Azure AI Search. |
 | `AZURE_AI_SEARCH_INDEX` | Search index name, usually `careai-rag-chunks`. |
 | `AZURE_OPENAI_ENDPOINT` | Optional Azure OpenAI endpoint. |

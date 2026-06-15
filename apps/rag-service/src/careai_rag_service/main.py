@@ -12,6 +12,7 @@ from careai_common.events import EventPublisher, build_event, event_publisher_fr
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from careai_rag_service.audit import AuditClient
 from careai_rag_service.llm import LLMProvider, llm_provider_from_env
@@ -40,6 +41,14 @@ from careai_rag_service.schemas import (
 settings = load_settings("rag-service", 8002)
 setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
+
+
+def cors_allowed_origins() -> list[str]:
+    configured = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
 async def correlation_middleware(request: Request, call_next) -> Response:
@@ -80,6 +89,12 @@ def create_app(
             {"name": "RAG", "description": "Question answering and answer evaluation."},
             {"name": "Prompts", "description": "Prompt registry views."},
         ],
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_allowed_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.state.retriever = runtime_retriever
     application.state.llm_provider = runtime_llm_provider

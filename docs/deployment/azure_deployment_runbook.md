@@ -92,6 +92,7 @@ Create repository variables:
 | `CONTROL_PLANE_URL` | Optional; workflow can resolve from app name. |
 | `INFERENCE_URL` | Optional; workflow can resolve from app name. |
 | `RAG_URL` | Optional; workflow can resolve from app name. |
+| `WEB_CONSOLE_URL` | Optional; workflow can resolve from app name and uses it for API CORS. |
 | `AZURE_AI_SEARCH_ENDPOINT` | Terraform `azure_ai_search_endpoint`. |
 | `AZURE_AI_SEARCH_INDEX` | Usually `careai-rag-chunks`. |
 | `AZURE_OPENAI_ENDPOINT` | Optional Azure OpenAI endpoint. |

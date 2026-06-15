@@ -116,10 +116,12 @@ jobs:
 
           web_control_plane_url="${CONTROL_PLANE_URL:-$(app_url "$CONTROL_PLANE_APP_NAME")}"
           web_rag_url="${RAG_URL:-$(app_url "$RAG_APP_NAME")}"
+          web_console_url="${WEB_CONSOLE_URL:-$(app_url "$WEB_CONSOLE_APP_NAME")}"
 
           {
             echo "WEB_BUILD_CONTROL_PLANE_URL=$web_control_plane_url"
             echo "WEB_BUILD_RAG_URL=$web_rag_url"
+            echo "WEB_CONSOLE_URL=$web_console_url"
           } >> "$GITHUB_ENV"
 
       - name: Build service images
@@ -195,6 +197,7 @@ jobs:
           CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-$(app_url "$CONTROL_PLANE_APP_NAME")}"
           INFERENCE_URL="${INFERENCE_URL:-$(app_url "$INFERENCE_APP_NAME")}"
           RAG_URL="${RAG_URL:-$(app_url "$RAG_APP_NAME")}"
+          WEB_CONSOLE_URL="${WEB_CONSOLE_URL:-$(app_url "$WEB_CONSOLE_APP_NAME")}"
           SEARCH_INDEX="${AZURE_AI_SEARCH_INDEX:-careai-rag-chunks}"
           CHAT_DEPLOYMENT="${AZURE_OPENAI_CHAT_DEPLOYMENT:-${AZURE_OPENAI_DEPLOYMENT:-}}"
           EMBEDDING_DEPLOYMENT="${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-${AZURE_OPENAI_DEPLOYMENT:-}}"
@@ -218,6 +221,7 @@ jobs:
           control_env=(
             "SERVICE_NAME=control-plane-api"
             "SERVICE_PORT=8000"
+            "CORS_ALLOWED_ORIGINS=$WEB_CONSOLE_URL"
           )
           if [ -n "$DATABASE_URL" ]; then
             control_env+=("DATABASE_URL=secretref:database-url")
@@ -243,6 +247,7 @@ jobs:
           inference_env=(
             "SERVICE_NAME=inference-service"
             "SERVICE_PORT=8001"
+            "CORS_ALLOWED_ORIGINS=$WEB_CONSOLE_URL"
             "CONTROL_PLANE_URL=secretref:control-plane-url"
             "CONTROL_PLANE_API_URL=secretref:control-plane-url"
             "CLAIMS_RISK_FEATURE_VERSION=claims-risk-features-v1"
@@ -269,6 +274,7 @@ jobs:
           rag_env=(
             "SERVICE_NAME=rag-service"
             "SERVICE_PORT=8002"
+            "CORS_ALLOWED_ORIGINS=$WEB_CONSOLE_URL"
             "CONTROL_PLANE_URL=secretref:control-plane-url"
             "CONTROL_PLANE_API_URL=secretref:control-plane-url"
             "RAG_DOCS_DIR=data/synthetic_docs"
@@ -318,6 +324,7 @@ jobs:
             echo "CONTROL_PLANE_URL=$CONTROL_PLANE_URL"
             echo "INFERENCE_URL=$INFERENCE_URL"
             echo "RAG_URL=$RAG_URL"
+            echo "WEB_CONSOLE_URL=$WEB_CONSOLE_URL"
           } >> "$GITHUB_ENV"
 
       - name: Post-deployment smoke tests

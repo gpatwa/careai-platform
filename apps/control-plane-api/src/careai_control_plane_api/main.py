@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,7 @@ from careai_common.events import event_publisher_from_env
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from careai_control_plane_api.api import router as control_plane_router
@@ -20,6 +22,14 @@ from careai_control_plane_api.database import Database
 settings = load_settings("control-plane-api", 8000)
 setup_json_logging(settings.service_name, settings.log_level, settings.environment)
 logger = logging.getLogger(__name__)
+
+
+def cors_allowed_origins() -> list[str]:
+    configured = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
 def create_app(database_url: str | None = None, create_schema: bool = True) -> FastAPI:
@@ -51,6 +61,12 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
             {"name": "Audit", "description": "Immutable-style audit event trail."},
             {"name": "Monitoring", "description": "Prediction events, drift, and model telemetry."},
         ],
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_allowed_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.state.database = database
     application.state.event_publisher = event_publisher_from_env(settings.service_name)
