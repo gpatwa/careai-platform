@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Control plane API for careai-platform."
 requires-python = ">=3.11"
 
+[project.scripts]
+careai-drift-check = "careai_control_plane_api.drift_job:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-

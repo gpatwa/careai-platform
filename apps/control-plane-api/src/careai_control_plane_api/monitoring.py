@@ -12,7 +12,40 @@ FEATURE_COLUMNS = [
     "region_code",
 ]
 
+NUMERIC_FEATURE_BINS: dict[str, list[tuple[int, int | None]]] = {
+    "prior_claim_count": [(0, 0), (1, 2), (3, 5), (6, 10), (11, 25), (26, None)],
+    "recent_visit_count": [(0, 0), (1, 1), (2, 3), (4, 6), (7, 12), (13, None)],
+    "medication_count": [(0, 0), (1, 2), (3, 5), (6, 10), (11, 20), (21, None)],
+    "chronic_condition_count": [(0, 0), (1, 1), (2, 2), (3, 4), (5, 7), (8, None)],
+}
+
 DriftStatus = Literal["green", "yellow", "red"]
+SloStatus = Literal["healthy", "breached", "unknown"]
+
+
+def numeric_bin_label(lower: int, upper: int | None) -> str:
+    if upper is None:
+        return f">={lower}"
+    if lower == upper:
+        return str(lower)
+    return f"{lower}-{upper}"
+
+
+def bucket_numeric_value(value: Any, bins: list[tuple[int, int | None]]) -> str:
+    if value is None:
+        return "__missing__"
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return "__invalid__"
+
+    for lower, upper in bins:
+        if upper is None and numeric_value >= lower:
+            return numeric_bin_label(lower, upper)
+        if upper is not None and lower <= numeric_value <= upper:
+            return numeric_bin_label(lower, upper)
+    return "__out_of_range__"
 
 
 def feature_distribution(
@@ -24,8 +57,12 @@ def feature_distribution(
     for column in columns:
         counts: Counter[str] = Counter()
         for record in records:
-            value = record.get(column, "__missing__")
-            counts[str(value)] += 1
+            if column in NUMERIC_FEATURE_BINS:
+                bucket = bucket_numeric_value(record.get(column), NUMERIC_FEATURE_BINS[column])
+            else:
+                value = record.get(column, "__missing__")
+                bucket = "__missing__" if value is None else str(value)
+            counts[bucket] += 1
 
         total = sum(counts.values())
         if total == 0:
@@ -102,3 +139,20 @@ def percentile(values: list[int], percentile_value: float) -> int | None:
     sorted_values = sorted(values)
     index = max(ceil(len(sorted_values) * percentile_value) - 1, 0)
     return sorted_values[min(index, len(sorted_values) - 1)]
+
+
+def slo_status(
+    *,
+    event_count: int,
+    error_rate: float,
+    p95_latency_ms: int | None,
+    error_rate_slo: float,
+    latency_slo_ms: int,
+) -> SloStatus:
+    if event_count == 0:
+        return "unknown"
+    if error_rate > error_rate_slo:
+        return "breached"
+    if p95_latency_ms is not None and p95_latency_ms > latency_slo_ms:
+        return "breached"
+    return "healthy"

@@ -13,8 +13,8 @@
 
 ## Service Boundaries
 
-- `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, and drift snapshots through a FastAPI/SQLAlchemy service with demo `create_all` schema creation.
-- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, and deterministic fallback scoring when no model is available.
+- `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, model error events, and drift snapshots through a FastAPI/SQLAlchemy service with demo `create_all` schema creation.
+- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, and deterministic fallback scoring when no model is available.
 - `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, and RAG-facing endpoints.
 - `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, and common errors.
 
@@ -24,9 +24,9 @@
 
 ## Monitoring
 
-The control plane stores prediction events for synthetic aggregate claims-risk features, scores, risk bands, latency, model version, and correlation IDs. Drift checks compare baseline training feature distributions from model lineage or a request body against recent serving distributions. The demo uses PSI-style metrics with deterministic `green`, `yellow`, and `red` statuses.
+The control plane stores prediction events for synthetic aggregate claims-risk features, scores, risk bands, latency, model version, and correlation IDs. Drift checks compare baseline training feature distributions from model lineage or a request body against recent serving distributions. Numeric utilization features are binned before PSI calculations so training and serving distributions remain stable and interpretable. The demo uses PSI-style metrics with deterministic `green`, `yellow`, and `red` statuses.
 
-Training-serving skew is represented by feature-level distribution differences. A `red` drift snapshot recommends rollback or human review. Latency monitoring tracks average and p95 latency; business monitoring tracks prediction score and high-risk rate. Error-rate wiring is represented in the dashboard contract and can later be backed by structured error events or Azure Application Insights.
+Training-serving skew is represented by feature-level distribution differences. A `red` drift snapshot recommends rollback or human review. Latency monitoring tracks average and p95 latency; business monitoring tracks prediction score and high-risk rate. Error-rate monitoring is backed by structured model error events and SLO thresholds in the summary contract. The `careai-drift-check` CLI provides a scheduled drift-check hook for cron, GitHub Actions, or Azure Container Apps Jobs.
 
 ## Cloud Target
 

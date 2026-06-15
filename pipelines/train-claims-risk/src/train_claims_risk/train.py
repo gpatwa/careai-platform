@@ -157,10 +157,47 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+NUMERIC_FEATURE_BINS: dict[str, list[tuple[int, int | None]]] = {
+    "prior_claim_count": [(0, 0), (1, 2), (3, 5), (6, 10), (11, 25), (26, None)],
+    "recent_visit_count": [(0, 0), (1, 1), (2, 3), (4, 6), (7, 12), (13, None)],
+    "medication_count": [(0, 0), (1, 2), (3, 5), (6, 10), (11, 20), (21, None)],
+    "chronic_condition_count": [(0, 0), (1, 1), (2, 2), (3, 4), (5, 7), (8, None)],
+}
+
+
+def numeric_bin_label(lower: int, upper: int | None) -> str:
+    if upper is None:
+        return f">={lower}"
+    if lower == upper:
+        return str(lower)
+    return f"{lower}-{upper}"
+
+
+def bucket_numeric_value(value: Any, bins: list[tuple[int, int | None]]) -> str:
+    if value is None:
+        return "__missing__"
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return "__invalid__"
+
+    for lower, upper in bins:
+        if upper is None and numeric_value >= lower:
+            return numeric_bin_label(lower, upper)
+        if upper is not None and lower <= numeric_value <= upper:
+            return numeric_bin_label(lower, upper)
+    return "__out_of_range__"
+
+
 def feature_distribution(data: pd.DataFrame) -> dict[str, dict[str, float]]:
     distributions: dict[str, dict[str, float]] = {}
     for column in FEATURE_COLUMNS:
-        counts = data[column].astype(str).value_counts(normalize=True).sort_index()
+        if column in NUMERIC_FEATURE_BINS:
+            bins = NUMERIC_FEATURE_BINS[column]
+            values = data[column].map(lambda value, bins=bins: bucket_numeric_value(value, bins))
+        else:
+            values = data[column].astype(str)
+        counts = values.value_counts(normalize=True).sort_index()
         distributions[column] = {
             str(value): float(frequency) for value, frequency in counts.items()
         }

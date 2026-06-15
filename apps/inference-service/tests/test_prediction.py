@@ -13,6 +13,11 @@ class FixedProbabilityModel:
         return [[0.2, 0.8] for _ in range(len(frame))]
 
 
+class FailingProbabilityModel:
+    def predict_proba(self, frame):
+        raise RuntimeError("synthetic model failure")
+
+
 def valid_payload() -> dict:
     return {
         "request_id": "synthetic-request-001",
@@ -197,6 +202,47 @@ def test_audit_client_sends_monitoring_prediction_event(monkeypatch) -> None:
     assert captured["json"]["correlation_id"] == "corr-monitoring"
 
 
+def test_audit_client_sends_monitoring_error_event(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict):
+            captured["url"] = url
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
+
+    delivered = AuditClient("http://control-plane:8000").send_monitoring_error_event(
+        model_name="claims-risk",
+        model_version="test",
+        error_type="model_prediction_failed",
+        error_message="Model prediction failed; deterministic fallback score returned.",
+        status_code=200,
+        latency_ms=15,
+        correlation_id="corr-error",
+    )
+
+    assert delivered is True
+    assert captured["url"] == "http://control-plane:8000/monitoring/error-events"
+    assert captured["json"]["error_type"] == "model_prediction_failed"
+    assert captured["json"]["status_code"] == 200
+    assert captured["json"]["correlation_id"] == "corr-error"
+
+
 def test_prediction_route_emits_monitoring_event(monkeypatch) -> None:
     posts: list[dict] = []
 
@@ -246,3 +292,63 @@ def test_prediction_route_emits_monitoring_event(monkeypatch) -> None:
     assert monitoring_post["json"]["risk_band"] == response.json()["risk_band"]
     assert monitoring_post["json"]["correlation_id"] == "corr-route-monitoring"
     assert "feature_timestamp" not in monitoring_post["json"]["request_features_json"]
+
+
+def test_prediction_route_emits_error_event_when_model_prediction_fails(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    posts: list[dict] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict):
+            posts.append({"url": url, "json": json})
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
+
+    model_path = tmp_path / "claims-risk-failing.joblib"
+    metadata_path = tmp_path / "model-metadata.json"
+    joblib.dump(FailingProbabilityModel(), model_path)
+    metadata_path.write_text(json.dumps({"name": "claims-risk", "version": "test"}))
+
+    app = create_app(
+        InferenceSettings(
+            model_uri=str(model_path),
+            model_metadata_path=str(metadata_path),
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url="http://control-plane:8000",
+            audit_enabled=True,
+            monitoring_enabled=True,
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/predict/claims-risk",
+            headers={"x-correlation-id": "corr-route-error"},
+            json=valid_payload(),
+        )
+
+    assert response.status_code == 200
+    assert response.json()["fallback_mode"] is True
+    error_post = next(post for post in posts if post["url"].endswith("/monitoring/error-events"))
+    assert error_post["json"]["model_name"] == "claims-risk"
+    assert error_post["json"]["model_version"] == "test"
+    assert error_post["json"]["error_type"] == "model_prediction_failed"
+    assert error_post["json"]["status_code"] == 200
+    assert error_post["json"]["correlation_id"] == "corr-route-error"

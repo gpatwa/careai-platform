@@ -284,7 +284,7 @@ Example response:
 
 ## Model Monitoring
 
-Prediction calls emit synthetic aggregate feature telemetry to the control plane. The monitoring endpoints summarize latency, prediction mix, high-risk rate, latest drift status, and dashboard data contracts.
+Prediction calls emit synthetic aggregate feature telemetry to the control plane. The monitoring endpoints summarize latency, prediction mix, high-risk rate, error events, SLO status, latest drift status, and dashboard data contracts.
 
 List recent prediction events:
 
@@ -296,6 +296,24 @@ Get dashboard-ready summary metrics:
 
 ```bash
 curl -s http://localhost:8000/monitoring/models/claims-risk/summary
+```
+
+List safe model error events or create one for SLO testing:
+
+```bash
+curl -s http://localhost:8000/monitoring/models/claims-risk/error-events
+
+curl -s -X POST http://localhost:8000/monitoring/error-events \
+  -H 'content-type: application/json' \
+  -d '{
+    "model_name": "claims-risk",
+    "model_version": "0.1.0",
+    "error_type": "model_prediction_failed",
+    "error_message": "Model prediction failed; deterministic fallback score returned.",
+    "status_code": 200,
+    "latency_ms": 42,
+    "correlation_id": "demo-error-001"
+  }'
 ```
 
 Run a drift check with an explicit synthetic baseline:
@@ -329,7 +347,16 @@ curl -s -X POST http://localhost:8000/monitoring/models/claims-risk/drift-check 
   }'
 ```
 
-The drift check uses PSI-style distribution differences between baseline training features and recent prediction features. `green`, `yellow`, and `red` statuses are deterministic for the supplied data. A `red` drift snapshot sets `rollback_recommended` to `true`, which is the demo trigger for rollback or human review.
+The drift check uses PSI-style distribution differences between baseline training features and recent prediction features. Numeric utilization features are binned first so monitoring is stable and explainable. `green`, `yellow`, and `red` statuses are deterministic for the supplied data. A `red` drift snapshot sets `rollback_recommended` to `true`, which is the demo trigger for rollback or human review. The summary endpoint reports breached SLO status when p95 latency exceeds 750 ms or error rate exceeds 2%.
+
+Run drift as a one-shot scheduled job hook:
+
+```bash
+careai-drift-check \
+  --control-plane-url http://localhost:8000 \
+  --model-name claims-risk \
+  --minimum-events 1
+```
 
 ## Safety and Governance
 
@@ -344,7 +371,7 @@ The drift check uses PSI-style distribution differences between baseline trainin
 - [x] Synthetic healthcare-like data generator with deterministic seeds and quality checks.
 - [x] MLOps training pipeline with experiment metadata and model registry records.
 - [x] Inference service with model loading, feature validation, safe audit events, and fallback scoring.
-- [x] Model monitoring with prediction events, latency metrics, drift snapshots, and dashboard contracts.
+- [x] Model monitoring with prediction events, numeric-bin drift snapshots, error events, SLO summaries, scheduled drift checks, and dashboard contracts.
 - [ ] Rollback controls and active model promotion wiring.
 - [ ] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [ ] RAG API with prompt registry, evaluations, safety checks, and audit logging.

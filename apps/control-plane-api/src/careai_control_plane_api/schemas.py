@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ModelStage = Literal["dev", "candidate", "staging", "approved", "production", "deprecated"]
 RiskBand = Literal["low", "medium", "high"]
 DriftStatus = Literal["green", "yellow", "red"]
+SloStatus = Literal["healthy", "breached", "unknown"]
 
 
 class DatasetAssetCreate(BaseModel):
@@ -157,6 +158,28 @@ class PredictionEventRead(PredictionEventCreate):
     created_at: datetime
 
 
+class ModelErrorEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str = Field(..., description="Served model name.")
+    model_version: str = Field(..., description="Served model version.")
+    error_type: str = Field(..., description="Safe error category without PHI/PII.")
+    error_message: str = Field(
+        default="",
+        description="Safe operational error summary. Do not include raw PHI/PII-like values.",
+    )
+    status_code: int = Field(default=500, ge=100, le=599)
+    latency_ms: int = Field(..., ge=0)
+    correlation_id: str = Field(..., description="Request correlation ID.")
+
+
+class ModelErrorEventRead(ModelErrorEventCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+
+
 class DriftCheckRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -199,6 +222,7 @@ class DriftCheckResponse(BaseModel):
 class MonitoringSummaryResponse(BaseModel):
     model_name: str
     event_count: int
+    error_count: int
     model_versions: list[str]
     avg_latency_ms: float | None
     p95_latency_ms: int | None
@@ -206,6 +230,9 @@ class MonitoringSummaryResponse(BaseModel):
     risk_band_counts: dict[str, int]
     high_risk_rate: float | None
     error_rate: float
+    latency_slo_ms: int
+    error_rate_slo: float
+    slo_status: SloStatus
     latest_drift_status: DriftStatus | None
     latest_drift_snapshot_id: str | None
     dashboard_contract: dict[str, Any]

@@ -16,6 +16,7 @@ from careai_control_plane_api.models import (
     DriftSnapshotORM,
     EvaluationRunORM,
     ModelArtifactORM,
+    ModelErrorEventORM,
     PredictionEventORM,
     PromptTemplateORM,
 )
@@ -23,6 +24,7 @@ from careai_control_plane_api.monitoring import (
     calculate_drift,
     feature_distribution,
     percentile,
+    slo_status,
 )
 from careai_control_plane_api.schemas import (
     ApprovalCreate,
@@ -39,6 +41,8 @@ from careai_control_plane_api.schemas import (
     EvaluationRunRead,
     ModelArtifactCreate,
     ModelArtifactRead,
+    ModelErrorEventCreate,
+    ModelErrorEventRead,
     MonitoringSummaryResponse,
     PredictionEventCreate,
     PredictionEventRead,
@@ -48,6 +52,8 @@ from careai_control_plane_api.schemas import (
 )
 
 OrmModel = TypeVar("OrmModel")
+DEFAULT_LATENCY_SLO_MS = 750
+DEFAULT_ERROR_RATE_SLO = 0.02
 
 
 def get_session(request: Request) -> Generator[Session, None, None]:
@@ -102,13 +108,25 @@ def monitoring_events_query(model_name: str, model_version: str | None = None):
     return query
 
 
+def monitoring_error_events_query(model_name: str, model_version: str | None = None):
+    query = select(ModelErrorEventORM).where(ModelErrorEventORM.model_name == model_name)
+    if model_version:
+        query = query.where(ModelErrorEventORM.model_version == model_version)
+    return query
+
+
 def build_monitoring_dashboard_contract(
     *,
     model_name: str,
     event_count: int,
+    error_count: int,
     avg_latency_ms: float | None,
     p95_latency_ms: int | None,
     high_risk_rate: float | None,
+    error_rate: float,
+    latency_slo_ms: int,
+    error_rate_slo: float,
+    current_slo_status: str,
     latest_drift_status: str | None,
 ) -> dict[str, Any]:
     return {
@@ -116,11 +134,18 @@ def build_monitoring_dashboard_contract(
         "model_name": model_name,
         "cards": [
             {"label": "Prediction Events", "value": event_count},
+            {"label": "Error Events", "value": error_count},
             {"label": "Avg Latency (ms)", "value": avg_latency_ms},
             {"label": "P95 Latency (ms)", "value": p95_latency_ms},
             {"label": "High Risk Rate", "value": high_risk_rate},
+            {"label": "Error Rate", "value": error_rate},
+            {"label": "SLO Status", "value": current_slo_status},
             {"label": "Latest Drift", "value": latest_drift_status},
         ],
+        "slos": {
+            "p95_latency_ms": latency_slo_ms,
+            "error_rate": error_rate_slo,
+        },
         "rollback_triggers": [
             "drift_status_red",
             "p95_latency_above_slo",
@@ -495,6 +520,44 @@ def create_prediction_event(
     return event
 
 
+@router.post(
+    "/monitoring/error-events",
+    response_model=ModelErrorEventRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Monitoring"],
+    summary="Ingest a model error event",
+    description=(
+        "Stores safe operational error telemetry for SLO monitoring. Payloads must not "
+        "contain raw PHI, PII, or request bodies."
+    ),
+)
+def create_model_error_event(
+    payload: ModelErrorEventCreate,
+    request: Request,
+    session: SessionDep,
+) -> ModelErrorEventORM:
+    event = ModelErrorEventORM(**payload.model_dump())
+    session.add(event)
+    session.flush()
+    write_audit_event(
+        session,
+        actor=actor_from_request(request, "inference-service"),
+        action="model_error_event.ingested",
+        target_type="model_error_event",
+        target_id=event.id,
+        metadata={
+            "model_name": event.model_name,
+            "model_version": event.model_version,
+            "error_type": event.error_type,
+            "status_code": event.status_code,
+            "latency_ms": event.latency_ms,
+        },
+    )
+    session.commit()
+    session.refresh(event)
+    return event
+
+
 @router.get(
     "/monitoring/models/{model_name}/events",
     response_model=list[PredictionEventRead],
@@ -518,6 +581,28 @@ def get_prediction_events(
 
 
 @router.get(
+    "/monitoring/models/{model_name}/error-events",
+    response_model=list[ModelErrorEventRead],
+    tags=["Monitoring"],
+    summary="List model error events",
+    description="Returns recent safe operational error telemetry for SLO dashboards.",
+)
+def get_model_error_events(
+    model_name: str,
+    session: SessionDep,
+    model_version: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> list[ModelErrorEventORM]:
+    return list(
+        session.scalars(
+            monitoring_error_events_query(model_name, model_version)
+            .order_by(ModelErrorEventORM.created_at.desc(), ModelErrorEventORM.id.desc())
+            .limit(limit)
+        )
+    )
+
+
+@router.get(
     "/monitoring/models/{model_name}/summary",
     response_model=MonitoringSummaryResponse,
     tags=["Monitoring"],
@@ -530,7 +615,12 @@ def get_monitoring_summary(
     model_version: str | None = Query(default=None),
 ) -> MonitoringSummaryResponse:
     events = list(session.scalars(monitoring_events_query(model_name, model_version)))
-    latency_values = [event.latency_ms for event in events]
+    error_events = list(
+        session.scalars(monitoring_error_events_query(model_name, model_version))
+    )
+    latency_values = [event.latency_ms for event in events] + [
+        event.latency_ms for event in error_events
+    ]
     scores = [event.prediction_score for event in events]
     risk_band_counts = {"low": 0, "medium": 0, "high": 0}
     for event in events:
@@ -544,33 +634,55 @@ def get_monitoring_summary(
     ).first()
 
     event_count = len(events)
+    error_count = len(error_events)
+    observed_count = event_count + error_count
     avg_latency_ms = round(mean(latency_values), 2) if latency_values else None
     avg_prediction_score = round(mean(scores), 6) if scores else None
     high_risk_rate = (
         round(risk_band_counts.get("high", 0) / event_count, 6) if event_count else None
     )
+    error_rate = round(error_count / observed_count, 6) if observed_count else 0.0
     latest_drift_status = latest_drift.drift_status if latest_drift else None
     p95_latency_ms = percentile(latency_values, 0.95)
+    current_slo_status = slo_status(
+        event_count=observed_count,
+        error_rate=error_rate,
+        p95_latency_ms=p95_latency_ms,
+        error_rate_slo=DEFAULT_ERROR_RATE_SLO,
+        latency_slo_ms=DEFAULT_LATENCY_SLO_MS,
+    )
 
     dashboard_contract = build_monitoring_dashboard_contract(
         model_name=model_name,
         event_count=event_count,
+        error_count=error_count,
         avg_latency_ms=avg_latency_ms,
         p95_latency_ms=p95_latency_ms,
         high_risk_rate=high_risk_rate,
+        error_rate=error_rate,
+        latency_slo_ms=DEFAULT_LATENCY_SLO_MS,
+        error_rate_slo=DEFAULT_ERROR_RATE_SLO,
+        current_slo_status=current_slo_status,
         latest_drift_status=latest_drift_status,
     )
 
     return MonitoringSummaryResponse(
         model_name=model_name,
         event_count=event_count,
-        model_versions=sorted({event.model_version for event in events}),
+        error_count=error_count,
+        model_versions=sorted(
+            {event.model_version for event in events}
+            | {event.model_version for event in error_events}
+        ),
         avg_latency_ms=avg_latency_ms,
         p95_latency_ms=p95_latency_ms,
         avg_prediction_score=avg_prediction_score,
         risk_band_counts=risk_band_counts,
         high_risk_rate=high_risk_rate,
-        error_rate=0.0,
+        error_rate=error_rate,
+        latency_slo_ms=DEFAULT_LATENCY_SLO_MS,
+        error_rate_slo=DEFAULT_ERROR_RATE_SLO,
+        slo_status=current_slo_status,
         latest_drift_status=latest_drift_status,
         latest_drift_snapshot_id=latest_drift.id if latest_drift else None,
         dashboard_contract=dashboard_contract,

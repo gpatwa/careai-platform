@@ -155,11 +155,13 @@ def register_routes(application: FastAPI) -> None:
             payload.features,
             application.state.inference_settings.max_feature_age_minutes,
         )
+        prediction_error_type: str | None = None
 
         try:
             score = model_manager.predict_score(payload.features)
-        except Exception:
+        except Exception as exc:
             logger.exception("claims-risk model prediction failed; fallback scoring enabled")
+            prediction_error_type = exc.__class__.__name__
             score = None
             warnings.append("model_prediction_failed_rules_fallback_used")
 
@@ -210,6 +212,16 @@ def register_routes(application: FastAPI) -> None:
             latency_ms=latency_ms,
             correlation_id=correlation_id,
         )
+        if prediction_error_type:
+            application.state.audit_client.send_monitoring_error_event(
+                model_name=active_model.model_name,
+                model_version=active_model.model_version,
+                error_type="model_prediction_failed",
+                error_message="Model prediction failed; deterministic fallback score returned.",
+                status_code=200,
+                latency_ms=latency_ms,
+                correlation_id=correlation_id,
+            )
 
         return ClaimsRiskPredictionResponse(
             prediction_score=score,

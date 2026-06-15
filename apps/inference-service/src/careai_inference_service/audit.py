@@ -83,3 +83,41 @@ class AuditClient:
                 extra={"error": str(exc)},
             )
             return False
+
+    def send_monitoring_error_event(
+        self,
+        *,
+        model_name: str,
+        model_version: str,
+        error_type: str,
+        error_message: str,
+        status_code: int,
+        latency_ms: int,
+        correlation_id: str,
+    ) -> bool:
+        if not self.monitoring_enabled or not self.control_plane_url:
+            return False
+
+        payload = {
+            "model_name": model_name,
+            "model_version": model_version,
+            "error_type": error_type,
+            "error_message": error_message,
+            "status_code": status_code,
+            "latency_ms": latency_ms,
+            "correlation_id": correlation_id,
+        }
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.post(
+                    f"{self.control_plane_url}/monitoring/error-events",
+                    json=payload,
+                )
+                response.raise_for_status()
+            return True
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "control-plane model-error-event delivery failed",
+                extra={"error": str(exc)},
+            )
+            return False

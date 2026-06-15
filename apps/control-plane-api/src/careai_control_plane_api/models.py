@@ -122,6 +122,20 @@ class PredictionEventORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class ModelErrorEventORM(Base):
+    __tablename__ = "model_error_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    model_name: Mapped[str] = mapped_column(String(160), index=True)
+    model_version: Mapped[str] = mapped_column(String(64), index=True)
+    error_type: Mapped[str] = mapped_column(String(120), index=True)
+    error_message: Mapped[str] = mapped_column(Text, default="")
+    status_code: Mapped[int] = mapped_column(Integer, default=500)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    correlation_id: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class DriftSnapshotORM(Base):
     __tablename__ = "drift_snapshots"
 
