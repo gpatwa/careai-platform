@@ -10,6 +10,7 @@ from careai_common.correlation import (
     ensure_correlation_id,
     set_correlation_id,
 )
+from careai_common.events import EventPublisher, build_event, event_publisher_from_env
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
@@ -47,6 +48,7 @@ async def correlation_middleware(request: Request, call_next) -> Response:
 def create_app(
     inference_settings: InferenceSettings | None = None,
     load_model: bool = True,
+    event_publisher: EventPublisher | None = None,
 ) -> FastAPI:
     runtime_settings = inference_settings or InferenceSettings.from_env()
     model_manager = ModelManager(runtime_settings)
@@ -76,6 +78,9 @@ def create_app(
     application.state.inference_settings = runtime_settings
     application.state.model_manager = model_manager
     application.state.audit_client = audit_client
+    application.state.event_publisher = event_publisher or event_publisher_from_env(
+        settings.service_name
+    )
     instrument_fastapi_app(application, settings)
     application.middleware("http")(correlation_middleware)
     register_routes(application)
@@ -220,6 +225,25 @@ def register_routes(application: FastAPI) -> None:
             latency_ms=latency_ms,
             correlation_id=correlation_id,
         )
+        publish_event_safely(
+            application.state.event_publisher,
+            build_event(
+                event_type="prediction.created",
+                source=settings.service_name,
+                subject=f"model/{active_model.model_name}",
+                correlation_id=correlation_id,
+                payload={
+                    "model_name": active_model.model_name,
+                    "model_version": active_model.model_version,
+                    "feature_version": active_model.feature_version,
+                    "request_features_json": payload.features.feature_frame_record(),
+                    "prediction_score": score,
+                    "risk_band": band,
+                    "latency_ms": latency_ms,
+                    "fallback_mode": fallback_mode,
+                },
+            ),
+        )
         if prediction_error_type:
             application.state.audit_client.send_monitoring_error_event(
                 model_name=active_model.model_name,
@@ -242,6 +266,17 @@ def register_routes(application: FastAPI) -> None:
             warnings=warnings,
             fallback_mode=fallback_mode,
         )
+
+
+def publish_event_safely(event_publisher: EventPublisher, event) -> bool:
+    try:
+        return event_publisher.publish(event)
+    except Exception as exc:
+        logger.warning(
+            "event publish failed",
+            extra={"event_type": event.event_type, "error": str(exc)},
+        )
+        return False
 
 
 app = create_app()

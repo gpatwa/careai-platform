@@ -121,6 +121,7 @@ Terraform outputs:
 - `azure_ai_search_endpoint`
 - `storage_account_name`
 - `event_hubs_namespace`
+- `event_hubs_fully_qualified_namespace`
 - `event_hub_name`
 - optional `postgres_fqdn`
 - optional `redis_hostname`
@@ -143,6 +144,8 @@ terraform output -raw acr_login_server
 terraform output -json container_apps_names
 terraform output -json container_apps_urls
 terraform output -raw azure_ai_search_endpoint
+terraform output -raw event_hubs_fully_qualified_namespace
+terraform output -raw event_hub_name
 ```
 
 | GitHub variable | Value |
@@ -163,6 +166,8 @@ terraform output -raw azure_ai_search_endpoint
 | `AZURE_AI_SEARCH_INDEX` | Search index name, usually `careai-rag-chunks`. |
 | `AZURE_OPENAI_ENDPOINT` | Optional Azure OpenAI endpoint. |
 | `AZURE_OPENAI_DEPLOYMENT` | Optional Azure OpenAI chat or embedding deployment name. |
+| `AZURE_EVENTHUB_NAME` | Terraform `event_hub_name`, usually `prediction-audit-events`. |
+| `AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE` | Terraform `event_hubs_fully_qualified_namespace` for managed-identity Event Hubs publishing. |
 
 Create GitHub repository secrets when those integrations are enabled:
 
@@ -172,6 +177,7 @@ Create GitHub repository secrets when those integrations are enabled:
 | `REDIS_URL` | Optional Redis URL. |
 | `AZURE_AI_SEARCH_API_KEY` | Optional until the app supports managed identity data-plane auth for Search. |
 | `AZURE_OPENAI_API_KEY` | Optional; omitted values keep RAG in local mock mode. |
+| `AZURE_EVENTHUB_CONNECTION_STRING` | Optional fallback for Event Hubs publishing when managed identity is not used. Prefer the namespace variable plus RBAC. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional Application Insights connection string. |
 
 Run the workflow from the GitHub Actions tab. It accepts an optional `image_tag`; when omitted it deploys the commit SHA. The workflow stores runtime configuration as Container App secrets and references them from environment variables. If Azure OpenAI is not configured, the RAG smoke test uses the local deterministic mock provider.

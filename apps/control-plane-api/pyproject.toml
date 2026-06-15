@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 [project.scripts]
 careai-drift-check = "careai_control_plane_api.drift_job:main"
 careai-db-upgrade = "careai_control_plane_api.migration_runner:main"
+careai-event-consumer = "careai_control_plane_api.event_consumer:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

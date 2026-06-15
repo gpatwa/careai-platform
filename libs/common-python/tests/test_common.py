@@ -8,7 +8,7 @@ from careai_common.correlation import (
     ensure_correlation_id,
     set_correlation_id,
 )
-from careai_common.events import EventEnvelope, InMemoryEventPublisher
+from careai_common.events import LocalLoggingEventPublisher, build_event, read_local_event_stream
 from careai_common.logging import setup_json_logging
 from careai_common.observability import configure_application_insights
 
@@ -95,14 +95,130 @@ def test_application_insights_configures_exporter_when_connection_string(monkeyp
     assert calls == [settings.applicationinsights_connection_string]
 
 
-def test_in_memory_event_publisher_captures_envelopes() -> None:
-    publisher = InMemoryEventPublisher()
-    event = EventEnvelope(
+def test_local_event_publisher_captures_and_writes_envelopes(tmp_path) -> None:
+    stream_path = tmp_path / "event-stream.jsonl"
+    publisher = LocalLoggingEventPublisher(str(stream_path))
+    event = build_event(
         event_type="prediction.created",
         source="inference-service",
-        payload={"model_name": "claims-risk"},
+        subject="model/claims-risk",
         correlation_id="corr-event",
+        payload={
+            "model_name": "claims-risk",
+            "model_version": "test",
+            "feature_version": "features-v1",
+            "request_features_json": {"age_bucket": "65+"},
+            "prediction_score": 0.8,
+            "risk_band": "high",
+            "latency_ms": 12,
+            "fallback_mode": False,
+        },
     )
 
     assert publisher.publish(event) is True
     assert publisher.events == [event]
+    streamed = read_local_event_stream(stream_path)
+    assert streamed == [event]
+    assert streamed[0].schema_version == "1.0"
+    assert streamed[0].payload["schema_version"] == "1.0"
+
+
+def test_event_schema_contracts_cover_supported_event_types() -> None:
+    examples = [
+        (
+            "prediction.created",
+            {
+                "model_name": "claims-risk",
+                "model_version": "test",
+                "feature_version": "features-v1",
+                "request_features_json": {"plan_type": "gold"},
+                "prediction_score": 0.7,
+                "risk_band": "medium",
+                "latency_ms": 10,
+                "fallback_mode": False,
+            },
+        ),
+        (
+            "audit.created",
+            {
+                "actor": "synthetic-operator",
+                "action": "model.promoted",
+                "target_type": "model",
+                "target_id": "model-001",
+                "metadata_json": {"stage": "candidate"},
+            },
+        ),
+        (
+            "model.drift_detected",
+            {
+                "model_name": "claims-risk",
+                "model_version": "test",
+                "drift_status": "yellow",
+                "snapshot_id": "snapshot-001",
+                "rollback_recommended": False,
+                "metrics_json": {},
+            },
+        ),
+        (
+            "model.promotion_requested",
+            {
+                "model_id": "model-001",
+                "model_name": "claims-risk",
+                "model_version": "test",
+                "from_stage": "candidate",
+                "to_stage": "staging",
+                "requested_by": "model-risk-reviewer",
+                "notes": "Synthetic gate passed.",
+            },
+        ),
+        (
+            "rag.query_answered",
+            {
+                "user_id": "synthetic-user-001",
+                "role": "clinical_ops",
+                "prompt_template_id": "prompt-001",
+                "prompt_version": "v1",
+                "retrieved_source_ids": ["source-001"],
+                "model_name": "local-deterministic-rag",
+                "provider": "local-mock",
+                "safety_flags": [],
+                "human_review_required": False,
+                "groundedness_score": 0.8,
+                "fallback_mode": True,
+            },
+        ),
+        (
+            "feedback.received",
+            {
+                "feedback_id": "feedback-001",
+                "target_type": "rag_answer",
+                "target_id": "corr-rag",
+                "rating": "positive",
+                "submitted_by": "synthetic-user-001",
+                "notes_category": "helpful",
+                "metadata_json": {},
+            },
+        ),
+    ]
+
+    events = [
+        build_event(
+            event_type=event_type,
+            source="unit-test",
+            subject=f"test/{index}",
+            correlation_id=f"corr-{index}",
+            payload=payload,
+        )
+        for index, (event_type, payload) in enumerate(examples)
+    ]
+
+    assert [event.event_type for event in events] == [
+        "prediction.created",
+        "audit.created",
+        "model.drift_detected",
+        "model.promotion_requested",
+        "rag.query_answered",
+        "feedback.received",
+    ]
+    assert all(event.schema_version == "1.0" for event in events)
+    assert all(event.payload["schema_version"] == "1.0" for event in events)

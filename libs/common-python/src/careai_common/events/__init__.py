@@ -1,35 +1,41 @@
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any, Protocol
-from uuid import uuid4
+from careai_common.events.publishers import (
+    AzureEventHubsPublisher,
+    DisabledEventPublisher,
+    EventPublisher,
+    LocalLoggingEventPublisher,
+    event_publisher_from_env,
+    read_local_event_stream,
+)
+from careai_common.events.schemas import (
+    EVENT_SCHEMA_VERSION,
+    AuditCreatedPayload,
+    EventEnvelope,
+    EventType,
+    FeedbackReceivedPayload,
+    ModelDriftDetectedPayload,
+    ModelPromotionRequestedPayload,
+    PredictionCreatedPayload,
+    RagQueryAnsweredPayload,
+    build_event,
+    validate_payload,
+)
 
-
-@dataclass(frozen=True)
-class EventEnvelope:
-    event_type: str
-    source: str
-    payload: dict[str, Any]
-    correlation_id: str
-    event_id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-
-
-class EventPublisher(Protocol):
-    def publish(self, event: EventEnvelope) -> bool:
-        """Publish an event envelope to a local or cloud-backed event bus."""
-
-
-class InMemoryEventPublisher:
-    """Event Hubs-compatible test double for local-first demos."""
-
-    def __init__(self) -> None:
-        self.events: list[EventEnvelope] = []
-
-    def publish(self, event: EventEnvelope) -> bool:
-        self.events.append(event)
-        return True
-
-
-class DisabledEventPublisher:
-    def publish(self, event: EventEnvelope) -> bool:
-        return False
+__all__ = [
+    "EVENT_SCHEMA_VERSION",
+    "AuditCreatedPayload",
+    "AzureEventHubsPublisher",
+    "DisabledEventPublisher",
+    "EventEnvelope",
+    "EventPublisher",
+    "EventType",
+    "FeedbackReceivedPayload",
+    "LocalLoggingEventPublisher",
+    "ModelDriftDetectedPayload",
+    "ModelPromotionRequestedPayload",
+    "PredictionCreatedPayload",
+    "RagQueryAnsweredPayload",
+    "build_event",
+    "event_publisher_from_env",
+    "read_local_event_stream",
+    "validate_payload",
+]

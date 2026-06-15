@@ -33,10 +33,13 @@ env:
   AZURE_AI_SEARCH_INDEX: ${{ vars.AZURE_AI_SEARCH_INDEX }}
   AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
   AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+  AZURE_EVENTHUB_NAME: ${{ vars.AZURE_EVENTHUB_NAME }}
+  AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${{ vars.AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE }}
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   REDIS_URL: ${{ secrets.REDIS_URL }}
   AZURE_AI_SEARCH_API_KEY: ${{ secrets.AZURE_AI_SEARCH_API_KEY }}
   AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+  AZURE_EVENTHUB_CONNECTION_STRING: ${{ secrets.AZURE_EVENTHUB_CONNECTION_STRING }}
   APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
 
 jobs:
@@ -178,6 +181,7 @@ jobs:
             set_secret_if_present "$app_name" "azure-openai-endpoint" "$AZURE_OPENAI_ENDPOINT"
             set_secret_if_present "$app_name" "azure-openai-deployment" "$AZURE_OPENAI_DEPLOYMENT"
             set_secret_if_present "$app_name" "azure-openai-api-key" "$AZURE_OPENAI_API_KEY"
+            set_secret_if_present "$app_name" "azure-eventhub-connection-string" "$AZURE_EVENTHUB_CONNECTION_STRING"
             set_secret_if_present "$app_name" "appinsights-connection-string" "$APPLICATIONINSIGHTS_CONNECTION_STRING"
           done
 
@@ -195,6 +199,15 @@ jobs:
           if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
             control_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
           fi
+          if [ -n "$AZURE_EVENTHUB_NAME" ]; then
+            control_env+=("AZURE_EVENTHUB_NAME=$AZURE_EVENTHUB_NAME")
+          fi
+          if [ -n "$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE" ]; then
+            control_env+=("AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE=$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE")
+          fi
+          if [ -n "$AZURE_EVENTHUB_CONNECTION_STRING" ]; then
+            control_env+=("AZURE_EVENTHUB_CONNECTION_STRING=secretref:azure-eventhub-connection-string")
+          fi
           update_app "$CONTROL_PLANE_APP_NAME" "$CONTROL_PLANE_IMAGE" "${control_env[@]}"
 
           inference_env=(
@@ -211,6 +224,15 @@ jobs:
           fi
           if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
             inference_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
+          fi
+          if [ -n "$AZURE_EVENTHUB_NAME" ]; then
+            inference_env+=("AZURE_EVENTHUB_NAME=$AZURE_EVENTHUB_NAME")
+          fi
+          if [ -n "$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE" ]; then
+            inference_env+=("AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE=$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE")
+          fi
+          if [ -n "$AZURE_EVENTHUB_CONNECTION_STRING" ]; then
+            inference_env+=("AZURE_EVENTHUB_CONNECTION_STRING=secretref:azure-eventhub-connection-string")
           fi
           update_app "$INFERENCE_APP_NAME" "$INFERENCE_IMAGE" "${inference_env[@]}"
 
@@ -244,6 +266,15 @@ jobs:
           fi
           if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
             rag_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
+          fi
+          if [ -n "$AZURE_EVENTHUB_NAME" ]; then
+            rag_env+=("AZURE_EVENTHUB_NAME=$AZURE_EVENTHUB_NAME")
+          fi
+          if [ -n "$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE" ]; then
+            rag_env+=("AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE=$AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE")
+          fi
+          if [ -n "$AZURE_EVENTHUB_CONNECTION_STRING" ]; then
+            rag_env+=("AZURE_EVENTHUB_CONNECTION_STRING=secretref:azure-eventhub-connection-string")
           fi
           update_app "$RAG_APP_NAME" "$RAG_IMAGE" "${rag_env[@]}"
 

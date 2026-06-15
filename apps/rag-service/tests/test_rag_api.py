@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+from careai_common.events import LocalLoggingEventPublisher
 from careai_rag_service.audit import AuditClient
 from careai_rag_service.llm import LocalMockChatProvider
 from careai_rag_service.main import create_app
@@ -123,6 +124,40 @@ def test_answer_contains_citations_and_metadata() -> None:
     assert body["provider_metadata"]["provider"] == "local-mock"
     assert body["prompt"]["prompt_version"] == "local-v1"
     assert body["correlation_id"] == "corr-rag-cited"
+
+
+def test_rag_query_publishes_query_answered_event() -> None:
+    publisher = LocalLoggingEventPublisher()
+    app = create_app(
+        retriever=FixedRetriever(),
+        llm_provider=LocalMockChatProvider(),
+        prompt_registry=PromptRegistry(None),
+        audit_client=AuditClient(None, enabled=False),
+        event_publisher=publisher,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/rag/query",
+            headers={"x-correlation-id": "corr-rag-event"},
+            json={
+                "user_id": "synthetic-user-001",
+                "role": "clinical_ops",
+                "question": "How should prior authorization requests be reviewed?",
+            },
+        )
+
+    assert response.status_code == 200
+    assert len(publisher.events) == 1
+    event = publisher.events[0]
+    assert event.event_type == "rag.query_answered"
+    assert event.schema_version == "1.0"
+    assert event.correlation_id == "corr-rag-event"
+    assert event.payload["prompt_version"] == "local-v1"
+    assert event.payload["retrieved_source_ids"] == ["prior_authorization_policy-0000"]
+    assert event.payload["human_review_required"] is False
+    assert "question" not in event.payload
+    assert "answer" not in event.payload
 
 
 def test_default_fallback_provider_is_local_mock() -> None:

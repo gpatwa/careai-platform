@@ -8,6 +8,7 @@ from careai_common.correlation import (
     ensure_correlation_id,
     set_correlation_id,
 )
+from careai_common.events import EventPublisher, build_event, event_publisher_from_env
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, HTTPException, Request, Response, status
@@ -57,6 +58,7 @@ def create_app(
     llm_provider: LLMProvider | None = None,
     prompt_registry: PromptRegistry | None = None,
     audit_client: AuditClient | None = None,
+    event_publisher: EventPublisher | None = None,
 ) -> FastAPI:
     runtime_retriever = retriever or retriever_from_env()
     runtime_llm_provider = llm_provider or llm_provider_from_env()
@@ -83,6 +85,9 @@ def create_app(
     application.state.llm_provider = runtime_llm_provider
     application.state.prompt_registry = runtime_prompt_registry
     application.state.audit_client = runtime_audit_client
+    application.state.event_publisher = event_publisher or event_publisher_from_env(
+        settings.service_name
+    )
     instrument_fastapi_app(application, settings)
     application.middleware("http")(correlation_middleware)
     register_routes(application)
@@ -228,6 +233,28 @@ def register_routes(application: FastAPI) -> None:
                 "conversation_present": payload.conversation_id is not None,
             },
         )
+        publish_event_safely(
+            application.state.event_publisher,
+            build_event(
+                event_type="rag.query_answered",
+                source=settings.service_name,
+                subject=f"conversation/{payload.conversation_id or correlation_id}",
+                correlation_id=correlation_id,
+                payload={
+                    "user_id": payload.user_id,
+                    "role": payload.role,
+                    "prompt_template_id": prompt.id,
+                    "prompt_version": prompt.version,
+                    "retrieved_source_ids": source_ids,
+                    "model_name": llm_response.model_name,
+                    "provider": llm_response.provider,
+                    "safety_flags": safety_flags,
+                    "human_review_required": review_required,
+                    "groundedness_score": score,
+                    "fallback_mode": llm_response.fallback_mode,
+                },
+            ),
+        )
 
         return RagQueryResponse(
             answer=llm_response.answer,
@@ -294,6 +321,17 @@ def citations_from_chunks(chunks: list[RetrievedChunk]) -> list[Citation]:
         )
         for chunk in chunks
     ]
+
+
+def publish_event_safely(event_publisher: EventPublisher, event) -> bool:
+    try:
+        return event_publisher.publish(event)
+    except Exception as exc:
+        logger.warning(
+            "event publish failed",
+            extra={"event_type": event.event_type, "error": str(exc)},
+        )
+        return False
 
 
 app = create_app()

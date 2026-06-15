@@ -479,6 +479,18 @@ After Terraform has created the Azure resources, run the `deploy-azure-container
 
 FastAPI services are instrumented with OpenTelemetry. Local runs emit structured JSON logs without Azure credentials; setting `APPLICATIONINSIGHTS_CONNECTION_STRING` enables Azure Monitor/Application Insights export for traces, logs, and metrics. See [docs/observability.md](docs/observability.md) for metric names, dashboard guidance, and suggested alert rules.
 
+## Event Backbone
+
+Services publish typed event envelopes for `prediction.created`, `audit.created`, `model.drift_detected`, `model.promotion_requested`, `rag.query_answered`, and `feedback.received`. Local demos can append events to `EVENT_STREAM_LOCAL_PATH=data/local/event-stream.jsonl`; Azure demos publish to Event Hubs when `AZURE_EVENTHUB_NAME` plus either `AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE` or `AZURE_EVENTHUB_CONNECTION_STRING` is configured.
+
+Consume the local stream once into the control-plane monitoring/audit projections:
+
+```bash
+careai-event-consumer \
+  --database-url sqlite:///./data/local/control-plane.db \
+  --event-stream-path data/local/event-stream.jsonl
+```
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.
@@ -501,4 +513,5 @@ FastAPI services are instrumented with OpenTelemetry. Local runs emit structured
 - [x] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, optional PostgreSQL, optional Redis, Event Hubs, Log Analytics, Application Insights, Azure AI Search, and optional Azure ML.
 - [x] GitHub Actions CI placeholder under `.github/workflows`.
 - [x] Optional Azure ML workspace integration in Terraform.
+- [x] Event Hubs-compatible event publishing and local consumer abstraction.
 - [ ] Optional AKS and Helm deployment extension.

@@ -43,6 +43,11 @@ output "event_hubs_namespace" {
   value       = try(azurerm_eventhub_namespace.this[0].name, null)
 }
 
+output "event_hubs_fully_qualified_namespace" {
+  description = "Event Hubs fully qualified namespace for managed-identity clients."
+  value       = try("${azurerm_eventhub_namespace.this[0].name}.servicebus.windows.net", null)
+}
+
 output "event_hub_name" {
   description = "Prediction and audit event hub name when Event Hubs is enabled."
   value       = try(azurerm_eventhub.prediction_audit[0].name, null)

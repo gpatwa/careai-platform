@@ -14,9 +14,9 @@
 ## Service Boundaries
 
 - `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, model error events, and drift snapshots through a FastAPI/SQLAlchemy service with Alembic migrations for persistent databases.
-- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, and deterministic fallback scoring when no model is available.
-- `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, and RAG-facing endpoints.
-- `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, and common errors.
+- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, `prediction.created` publication, and deterministic fallback scoring when no model is available.
+- `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, RAG-facing endpoints, and `rag.query_answered` publication without raw question or answer text.
+- `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, event schemas/publishers, observability helpers, and common errors.
 
 ## MLOps Pipeline
 
@@ -41,6 +41,30 @@ RAG evaluation is the pre-promotion LLMOps gate. The evaluator measures retrieva
 The control plane stores prediction events for synthetic aggregate claims-risk features, scores, risk bands, latency, model version, and correlation IDs. Drift checks compare baseline training feature distributions from model lineage or a request body against recent serving distributions. Numeric utilization features are binned before PSI calculations so training and serving distributions remain stable and interpretable. The demo uses PSI-style metrics with deterministic `green`, `yellow`, and `red` statuses.
 
 Training-serving skew is represented by feature-level distribution differences. A `red` drift snapshot recommends rollback or human review. Latency monitoring tracks average and p95 latency; business monitoring tracks prediction score and high-risk rate. Error-rate monitoring is backed by structured model error events and SLO thresholds in the summary contract. The `careai-drift-check` CLI provides a scheduled drift-check hook for cron, GitHub Actions, or Azure Container Apps Jobs.
+
+## Event Backbone
+
+The platform includes a Kafka/Event Hubs-style event backbone abstraction in `libs/common-python`. Event envelopes carry `event_id`, `event_type`, `schema_version`, `source`, `subject`, `correlation_id`, `created_at`, and a schema-versioned payload. Supported event contracts are:
+
+- `prediction.created`
+- `audit.created`
+- `model.drift_detected`
+- `model.promotion_requested`
+- `rag.query_answered`
+- `feedback.received`
+
+Local development uses `LocalLoggingEventPublisher`, which logs safe event metadata and can append envelopes to `EVENT_STREAM_LOCAL_PATH` as JSONL. This JSONL file acts like a compact local topic for tests and interview demos. Azure deployments use `AzureEventHubsPublisher` when `AZURE_EVENTHUB_NAME` is set with either `AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE` for managed identity or `AZURE_EVENTHUB_CONNECTION_STRING` for secret-backed demos.
+
+The mapping to Kafka/pub-sub is intentionally direct:
+
+- Event Hubs namespace or Kafka cluster: shared streaming backbone.
+- Event hub or Kafka topic: `careai-events`.
+- Event type: routing key for consumers and dashboards.
+- Correlation ID: distributed trace and audit join key.
+- Schema version: compatibility boundary for producers and consumers.
+- Consumer group: each projection job, monitor, or retraining trigger reads independently.
+
+`careai-event-consumer` is the local projection job. It reads the JSONL stream once and materializes operational views into PostgreSQL or SQLite: `prediction.created` becomes `PredictionEvent`, `model.drift_detected` becomes `DriftSnapshot`, and governance/RAG/feedback events become safe `AuditEvent` rows. In Azure, the same pattern would run as an Azure Container Apps Job or Function subscribed to Event Hubs consumer groups. Downstream extensions can add retraining triggers, drift-alert notifications, human-feedback aggregation, or feature-store refreshes without coupling producers to those workflows.
 
 ## Cloud Target
 

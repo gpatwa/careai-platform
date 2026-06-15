@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 
 import joblib
+from careai_common.events import LocalLoggingEventPublisher
 from careai_inference_service.audit import AuditClient
 from careai_inference_service.main import create_app
 from careai_inference_service.model_manager import InferenceSettings
@@ -292,6 +293,40 @@ def test_prediction_route_emits_monitoring_event(monkeypatch) -> None:
     assert monitoring_post["json"]["risk_band"] == response.json()["risk_band"]
     assert monitoring_post["json"]["correlation_id"] == "corr-route-monitoring"
     assert "feature_timestamp" not in monitoring_post["json"]["request_features_json"]
+
+
+def test_prediction_route_publishes_prediction_created_event() -> None:
+    publisher = LocalLoggingEventPublisher()
+    app = create_app(
+        InferenceSettings(
+            model_uri=None,
+            model_metadata_path=None,
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url=None,
+            audit_enabled=False,
+            monitoring_enabled=False,
+        ),
+        event_publisher=publisher,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/predict/claims-risk",
+            headers={"x-correlation-id": "corr-event-prediction"},
+            json=valid_payload(),
+        )
+
+    assert response.status_code == 200
+    assert len(publisher.events) == 1
+    event = publisher.events[0]
+    assert event.event_type == "prediction.created"
+    assert event.schema_version == "1.0"
+    assert event.correlation_id == "corr-event-prediction"
+    assert event.payload["model_name"] == "claims-risk-rules-fallback"
+    assert event.payload["feature_version"] == "features-test"
+    assert event.payload["risk_band"] == response.json()["risk_band"]
+    assert "feature_timestamp" not in event.payload["request_features_json"]
 
 
 def test_prediction_route_emits_error_event_when_model_prediction_fails(

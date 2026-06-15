@@ -5,6 +5,7 @@ from statistics import mean
 from typing import Annotated, Any, TypeVar
 
 from careai_common.correlation import ensure_correlation_id
+from careai_common.events import EventEnvelope, build_event
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -101,6 +102,17 @@ def write_audit_event(
         },
     )
     return event
+
+
+def publish_event_safely(request: Request, event: EventEnvelope) -> bool:
+    try:
+        return request.app.state.event_publisher.publish(event)
+    except Exception as exc:
+        logger.warning(
+            "event publish failed",
+            extra={"event_type": event.event_type, "error": str(exc)},
+        )
+        return False
 
 
 def list_records(session: Session, model: type[OrmModel]) -> list[OrmModel]:
@@ -286,6 +298,7 @@ def promote_model(
 
     previous_stage = model.stage
     model.stage = payload.stage
+    correlation_id = ensure_correlation_id()
     write_audit_event(
         session,
         actor=actor_from_request(request, payload.actor),
@@ -297,6 +310,24 @@ def promote_model(
             "to_stage": payload.stage,
             "notes": payload.notes,
         },
+    )
+    publish_event_safely(
+        request,
+        build_event(
+            event_type="model.promotion_requested",
+            source="control-plane-api",
+            subject=f"model/{model.id}",
+            correlation_id=correlation_id,
+            payload={
+                "model_id": model.id,
+                "model_name": model.name,
+                "model_version": model.version,
+                "from_stage": previous_stage,
+                "to_stage": payload.stage,
+                "requested_by": actor_from_request(request, payload.actor),
+                "notes": payload.notes,
+            },
+        ),
     )
     session.commit()
     session.refresh(model)
@@ -492,10 +523,27 @@ def get_audit_events(session: SessionDep) -> list[AuditEventORM]:
 )
 def create_audit_event(
     payload: AuditEventCreate,
+    request: Request,
     session: SessionDep,
 ) -> AuditEventORM:
     event = AuditEventORM(**payload.model_dump())
     session.add(event)
+    publish_event_safely(
+        request,
+        build_event(
+            event_type="audit.created",
+            source="control-plane-api",
+            subject=f"{event.target_type}/{event.target_id}",
+            correlation_id=event.correlation_id,
+            payload={
+                "actor": event.actor,
+                "action": event.action,
+                "target_type": event.target_type,
+                "target_id": event.target_id,
+                "metadata_json": event.metadata_json,
+            },
+        ),
+    )
     session.commit()
     session.refresh(event)
     return event
@@ -809,6 +857,26 @@ def run_drift_check(
     )
     session.add(snapshot)
     session.flush()
+    publish_event_safely(
+        request,
+        build_event(
+            event_type="model.drift_detected",
+            source="control-plane-api",
+            subject=f"model/{model_name}",
+            correlation_id=snapshot.correlation_id,
+            payload={
+                "model_name": model_name,
+                "model_version": model_version,
+                "drift_status": drift_status,
+                "snapshot_id": snapshot.id,
+                "rollback_recommended": rollback_recommended,
+                "metrics_json": {
+                    "feature_metrics": feature_metrics,
+                    "dashboard_contract": dashboard_contract,
+                },
+            },
+        ),
+    )
     write_audit_event(
         session,
         actor="monitoring-job",

@@ -8,6 +8,7 @@ from careai_common.correlation import (
     ensure_correlation_id,
     set_correlation_id,
 )
+from careai_common.events import event_publisher_from_env
 from careai_common.logging import setup_json_logging
 from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, Request, Response
@@ -51,6 +52,7 @@ def create_app(database_url: str | None = None, create_schema: bool = True) -> F
         ],
     )
     application.state.database = database
+    application.state.event_publisher = event_publisher_from_env(settings.service_name)
     instrument_fastapi_app(application, settings)
     application.include_router(control_plane_router)
     register_core_routes(application)
