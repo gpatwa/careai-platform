@@ -3,7 +3,7 @@ SHELL := /bin/sh
 PYTHON ?= python3
 VENV := .venv
 VENV_PYTHON := $(VENV)/bin/python
-VENV_PIP := $(VENV)/bin/pip
+VENV_PIP := $(VENV_PYTHON) -m pip
 DOCKER_PLATFORM ?= linux/amd64
 
 .PHONY: setup setup-python setup-frontend db-upgrade test lint security-check docker-build docker-run-control-plane docker-run-inference docker-run-rag local-up local-down clean
