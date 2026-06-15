@@ -164,6 +164,24 @@ Local endpoints:
 - RAG service: `http://localhost:8002/healthz`
 - MLflow: `http://localhost:5000`
 
+Run the complete local interview demo:
+
+```bash
+scripts/demo_local.sh
+```
+
+The script starts local services, generates synthetic claims data, trains and registers a model, creates model-card and approval metadata, creates a canary deployment, calls inference, ingests synthetic RAG documents, runs a RAG query, and writes an evaluation report under `data/local/demo/`.
+
+Run deployed smoke tests after Azure Container Apps are deployed:
+
+```bash
+CONTROL_PLANE_URL=https://<control-plane-app> \
+INFERENCE_URL=https://<inference-app> \
+RAG_URL=https://<rag-app> \
+WEB_CONSOLE_URL=https://<web-console-app> \
+scripts/demo_azure_smoke_test.sh
+```
+
 ## Web Console Demo
 
 The web console is a TypeScript/Vite interview dashboard for the control plane, MLOps lifecycle, LLMOps lifecycle, monitoring, and governance views. It tries the local APIs first and falls back to synthetic mock data if one of the services is offline, which keeps the interview flow usable while infrastructure is starting.
