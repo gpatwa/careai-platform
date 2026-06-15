@@ -70,16 +70,17 @@ terraform fmt -check
 terraform validate
 ```
 
-Plan and apply:
+For a fresh environment, bootstrap the resource group and ACR first so images can be pushed before Container Apps are created:
 
 ```bash
-terraform plan -out tfplan
-terraform apply tfplan
+terraform apply \
+  -target=azurerm_resource_group.this \
+  -target=azurerm_container_registry.this
 ```
 
 ## Build And Push Images
 
-After the first apply creates ACR, push images using the `acr_login_server` output:
+Push images using the `acr_login_server` output:
 
 ```bash
 ACR_LOGIN_SERVER="$(terraform output -raw acr_login_server)"
@@ -88,7 +89,12 @@ az acr login --name "${ACR_LOGIN_SERVER%%.azurecr.io}"
 docker build -f ../../apps/control-plane-api/Dockerfile -t "$ACR_LOGIN_SERVER/control-plane-api:latest" ../..
 docker build -f ../../apps/inference-service/Dockerfile -t "$ACR_LOGIN_SERVER/inference-service:latest" ../..
 docker build -f ../../apps/rag-service/Dockerfile -t "$ACR_LOGIN_SERVER/rag-service:latest" ../..
-docker build -f ../../apps/web-console/Dockerfile -t "$ACR_LOGIN_SERVER/web-console:latest" ../../apps/web-console
+docker build \
+  -f ../../apps/web-console/Dockerfile \
+  --build-arg VITE_CONTROL_PLANE_API_URL="${VITE_CONTROL_PLANE_API_URL:-http://localhost:8000}" \
+  --build-arg VITE_RAG_SERVICE_URL="${VITE_RAG_SERVICE_URL:-http://localhost:8002}" \
+  -t "$ACR_LOGIN_SERVER/web-console:latest" \
+  ../../apps/web-console
 
 docker push "$ACR_LOGIN_SERVER/control-plane-api:latest"
 docker push "$ACR_LOGIN_SERVER/inference-service:latest"
@@ -96,7 +102,14 @@ docker push "$ACR_LOGIN_SERVER/rag-service:latest"
 docker push "$ACR_LOGIN_SERVER/web-console:latest"
 ```
 
-Run `terraform apply` again after pushing images if the initial Container Apps revisions were waiting on images.
+Then deploy the full stack:
+
+```bash
+terraform plan -out tfplan
+terraform apply tfplan
+```
+
+The Vite web console reads API URLs at image build time. For a polished Azure-hosted UI, rebuild and push the web console after the first full apply using `terraform output -json container_apps_urls`, update `container_image_tags.web_console`, and apply again.
 
 ## Outputs
 
