@@ -44,4 +44,4 @@ Training-serving skew is represented by feature-level distribution differences. 
 
 ## Cloud Target
 
-The default Azure path is Docker images in Azure Container Registry deployed to Azure Container Apps. Supporting Azure services include Azure AI Search, Key Vault, Storage Account, PostgreSQL, Redis, Event Hubs, Log Analytics, and Application Insights. AKS and Helm remain optional extensions.
+The default Azure path is implemented in `infra/terraform`: Docker images are pushed to Azure Container Registry and deployed to Azure Container Apps with a shared user-assigned managed identity. Supporting Azure services include Azure AI Search, Key Vault, Storage Account, Event Hubs, Log Analytics, and Application Insights. PostgreSQL, Redis, and Azure ML are Terraform-controlled optional resources so demo environments can avoid unnecessary cost. AKS and Helm remain optional extensions.

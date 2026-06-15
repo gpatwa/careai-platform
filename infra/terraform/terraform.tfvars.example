@@ -1,0 +1,25 @@
+environment     = "dev"
+location        = "eastus"
+resource_prefix = "careai"
+
+tags = {
+  project     = "careai-platform"
+  owner       = "platform-demo"
+  data_policy = "synthetic-only"
+}
+
+container_image_tags = {
+  control_plane_api = "latest"
+  inference_service = "latest"
+  rag_service       = "latest"
+  web_console       = "latest"
+}
+
+enable_postgres   = false
+enable_redis      = false
+enable_azure_ml   = false
+enable_event_hubs = true
+
+azure_ai_search_sku  = "basic"
+container_min_replicas = 0
+container_max_replicas = 3

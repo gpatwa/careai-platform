@@ -458,6 +458,21 @@ careai-drift-check \
   --minimum-events 1
 ```
 
+## Azure Deployment
+
+Terraform for the default Azure Container Apps deployment lives under `infra/terraform`.
+
+```bash
+cd infra/terraform
+az login
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform plan
+terraform apply
+```
+
+The stack creates ACR, Container Apps, Log Analytics, Application Insights, Key Vault, Storage, Azure AI Search, and optional Event Hubs, PostgreSQL, Redis, and Azure ML resources. See [infra/terraform/README.md](infra/terraform/README.md) for image push commands, variables, outputs, and cost/security notes.
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.
@@ -477,7 +492,7 @@ careai-drift-check \
 - [x] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] GenAI evaluation pipeline with RAG quality, safety, latency, and promotion-gate metrics.
 - [x] Simple TypeScript demo UI for platform workflows, monitoring, RAG, and governance views.
-- [ ] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, PostgreSQL, Redis, Event Hubs, Log Analytics, Application Insights, and Azure AI Search.
+- [x] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, optional PostgreSQL, optional Redis, Event Hubs, Log Analytics, Application Insights, Azure AI Search, and optional Azure ML.
 - [x] GitHub Actions CI placeholder under `.github/workflows`.
-- [ ] Optional Azure ML workspace integration.
+- [x] Optional Azure ML workspace integration in Terraform.
 - [ ] Optional AKS and Helm deployment extension.
