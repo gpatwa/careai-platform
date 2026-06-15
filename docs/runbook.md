@@ -74,6 +74,19 @@ careai-drift-check \
 
 Drift compares baseline training distributions to recent serving distributions, with numeric utilization features binned before PSI calculations. Investigate `yellow`; treat `red` as a rollback or human-review trigger. Also review p95 latency, error rate, and high-risk-rate changes for signs of training-serving skew, data quality issues, or operational degradation. The summary endpoint marks SLO status as breached when p95 latency exceeds 750 ms or error rate exceeds 2%.
 
+## RAG Ingestion
+
+Run local synthetic document ingestion:
+
+```bash
+python -m ingest_rag.ingest \
+  --input-dir data/synthetic_docs \
+  --output data/local/rag-index.json \
+  --force-local
+```
+
+To use Azure AI Search, set `AZURE_AI_SEARCH_ENDPOINT`, `AZURE_AI_SEARCH_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`, then omit `--force-local`. The pipeline creates or updates the `careai-rag-chunks` index, uploads chunks, and keeps `allowed_roles` metadata available for retrieval filters.
+
 ## Shutdown
 
 ```bash

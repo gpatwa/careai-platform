@@ -4,6 +4,7 @@ testpaths = [
   "apps/control-plane-api/tests",
   "apps/inference-service/tests",
   "apps/rag-service/tests",
+  "pipelines/ingest-rag/tests",
   "pipelines/train-claims-risk/tests"
 ]
 addopts = "-q --import-mode=importlib"

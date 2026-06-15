@@ -18,6 +18,7 @@ setup-python:
 	@$(VENV_PIP) install -e apps/control-plane-api
 	@$(VENV_PIP) install -e apps/inference-service
 	@$(VENV_PIP) install -e apps/rag-service
+	@$(VENV_PIP) install -e pipelines/ingest-rag
 	@$(VENV_PIP) install -e pipelines/train-claims-risk
 
 setup-frontend:

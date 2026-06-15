@@ -229,6 +229,21 @@ python -m train_claims_risk.train \
 
 See [pipelines/train-claims-risk/README.md](pipelines/train-claims-risk/README.md) for the full MLOps walkthrough.
 
+## RAG Document Ingestion
+
+Synthetic healthcare-operations documents live in `data/synthetic_docs/`. The ingestion pipeline loads Markdown, chunks text, attaches governance metadata, generates embeddings, and writes either Azure AI Search or a local JSON vector index.
+
+Run local ingestion without Azure credentials:
+
+```bash
+python -m ingest_rag.ingest \
+  --input-dir data/synthetic_docs \
+  --output data/local/rag-index.json \
+  --force-local
+```
+
+Set `AZURE_AI_SEARCH_ENDPOINT`, `AZURE_AI_SEARCH_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` to index into Azure AI Search. See [pipelines/ingest-rag/README.md](pipelines/ingest-rag/README.md) for schema, chunking, metadata filtering, and role-based retrieval details.
+
 ## Claims-Risk Inference API
 
 The inference service loads a trained synthetic claims-risk model from `CLAIMS_RISK_MODEL_URI` or falls back to deterministic rules when no model is configured. It validates feature shape, checks feature freshness, returns reason codes, and sends safe audit and monitoring metadata to the control plane when `CONTROL_PLANE_API_URL` is configured.
@@ -379,7 +394,7 @@ careai-drift-check \
 - [x] Inference service with model loading, feature validation, safe audit events, and fallback scoring.
 - [x] Model monitoring with prediction events, numeric-bin drift snapshots, error events, SLO summaries, scheduled drift checks, and dashboard contracts.
 - [ ] Rollback controls and active model promotion wiring.
-- [ ] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
+- [x] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [ ] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] Simple TypeScript demo UI skeleton for platform workflows and governance views.
 - [ ] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, PostgreSQL, Redis, Event Hubs, Log Analytics, Application Insights, and Azure AI Search.
