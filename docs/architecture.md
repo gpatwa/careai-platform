@@ -14,7 +14,7 @@
 ## Service Boundaries
 
 - `apps/control-plane-api`: orchestration, metadata, registry, promotion, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, and audit events through a FastAPI/SQLAlchemy service with demo `create_all` schema creation.
-- `apps/inference-service`: model inference, readiness, monitoring hooks, and rollback-facing endpoints.
+- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit events, and deterministic fallback scoring when no model is available.
 - `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, and RAG-facing endpoints.
 - `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, and common errors.
 

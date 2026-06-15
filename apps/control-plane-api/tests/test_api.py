@@ -152,6 +152,30 @@ def test_create_and_list_deployments_prompts_evaluations_and_approvals() -> None
     } <= audit_actions
 
 
+def test_create_external_audit_event() -> None:
+    with make_client() as client:
+        response = client.post(
+            "/audit-events",
+            json={
+                "actor": "inference-service",
+                "action": "claims_risk.predicted",
+                "target_type": "prediction",
+                "target_id": "synthetic-request-001",
+                "correlation_id": "corr-inference",
+                "metadata_json": {
+                    "risk_band": "high",
+                    "fallback_mode": False,
+                },
+            },
+        )
+        audit_events = client.get("/audit-events").json()
+
+    assert response.status_code == 201
+    assert response.json()["actor"] == "inference-service"
+    assert response.json()["metadata_json"]["risk_band"] == "high"
+    assert any(event["action"] == "claims_risk.predicted" for event in audit_events)
+
+
 def test_invalid_promotion_stage_is_rejected() -> None:
     with make_client() as client:
         response = client.post(

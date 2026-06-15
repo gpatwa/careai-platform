@@ -18,6 +18,7 @@ from careai_control_plane_api.models import (
 from careai_control_plane_api.schemas import (
     ApprovalCreate,
     ApprovalRead,
+    AuditEventCreate,
     AuditEventRead,
     DatasetAssetCreate,
     DatasetAssetRead,
@@ -381,3 +382,22 @@ def get_approvals(session: SessionDep) -> list[ApprovalORM]:
 )
 def get_audit_events(session: SessionDep) -> list[AuditEventORM]:
     return list_records(session, AuditEventORM)
+
+
+@router.post(
+    "/audit-events",
+    response_model=AuditEventRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Audit"],
+    summary="Create an external audit event",
+    description="Stores an audit event emitted by another platform service.",
+)
+def create_audit_event(
+    payload: AuditEventCreate,
+    session: SessionDep,
+) -> AuditEventORM:
+    event = AuditEventORM(**payload.model_dump())
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event

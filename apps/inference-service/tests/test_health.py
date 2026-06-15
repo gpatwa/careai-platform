@@ -16,5 +16,4 @@ def test_readyz() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ready"
-    assert body["dependencies"]["model_registry"] == "configured"
-
+    assert body["dependencies"]["model"] in {"loaded", "fallback"}

@@ -223,6 +223,65 @@ python -m train_claims_risk.train \
 
 See [pipelines/train-claims-risk/README.md](pipelines/train-claims-risk/README.md) for the full MLOps walkthrough.
 
+## Claims-Risk Inference API
+
+The inference service loads a trained synthetic claims-risk model from `CLAIMS_RISK_MODEL_URI` or falls back to deterministic rules when no model is configured. It validates feature shape, checks feature freshness, returns reason codes, and sends safe audit metadata to the control plane when `CONTROL_PLANE_API_URL` is configured.
+
+Start the API:
+
+```bash
+.venv/bin/uvicorn careai_inference_service.main:app --reload --port 8001
+```
+
+Check active model state:
+
+```bash
+curl -s http://localhost:8001/models/active
+```
+
+Score a synthetic claims-risk request:
+
+```bash
+curl -s -X POST http://localhost:8001/predict/claims-risk \
+  -H 'content-type: application/json' \
+  -H 'x-correlation-id: demo-inference-001' \
+  -d '{
+    "request_id": "synthetic-request-001",
+    "features": {
+      "age_bucket": "65+",
+      "plan_type": "medicare_advantage",
+      "prior_claim_count": 8,
+      "recent_visit_count": 4,
+      "medication_count": 6,
+      "chronic_condition_count": 3,
+      "region_code": "R03",
+      "feature_timestamp": "2026-06-14T12:00:00Z"
+    }
+  }'
+```
+
+Example response:
+
+```json
+{
+  "prediction_score": 0.88,
+  "risk_band": "high",
+  "model_name": "claims-risk",
+  "model_version": "0.1.0",
+  "feature_version": "claims-risk-features-v1",
+  "decision_reason_codes": [
+    "CHRONIC_CONDITION_BURDEN",
+    "ELEVATED_PRIOR_CLAIMS",
+    "RECENT_UTILIZATION",
+    "MEDICATION_COMPLEXITY",
+    "HIGH_SCORE_THRESHOLD"
+  ],
+  "correlation_id": "demo-inference-001",
+  "warnings": [],
+  "fallback_mode": false
+}
+```
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.
@@ -235,7 +294,8 @@ See [pipelines/train-claims-risk/README.md](pipelines/train-claims-risk/README.m
 - [x] Monorepo scaffold with Makefile, service layout, shared schemas, and Docker Compose.
 - [x] Synthetic healthcare-like data generator with deterministic seeds and quality checks.
 - [x] MLOps training pipeline with experiment metadata and model registry records.
-- [ ] Inference service with model promotion, deployment metadata, monitoring, and rollback path.
+- [x] Inference service with model loading, feature validation, safe audit events, and fallback scoring.
+- [ ] Deployment monitoring, rollback controls, and active model promotion wiring.
 - [ ] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [ ] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] Simple TypeScript demo UI skeleton for platform workflows and governance views.

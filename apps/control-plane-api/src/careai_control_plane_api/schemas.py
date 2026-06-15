@@ -123,3 +123,11 @@ class AuditEventRead(BaseModel):
     metadata_json: dict[str, Any]
     created_at: datetime
 
+
+class AuditEventCreate(BaseModel):
+    actor: str = Field(..., description="Synthetic actor or service identifier.")
+    action: str = Field(..., description="Action name for the audit event.")
+    target_type: str = Field(..., description="Target resource type.")
+    target_id: str = Field(..., description="Target resource identifier.")
+    correlation_id: str = Field(..., description="Correlation ID from the originating request.")
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
