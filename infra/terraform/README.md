@@ -86,10 +86,11 @@ Push images using the `acr_login_server` output:
 ACR_LOGIN_SERVER="$(terraform output -raw acr_login_server)"
 az acr login --name "${ACR_LOGIN_SERVER%%.azurecr.io}"
 
-docker build -f ../../apps/control-plane-api/Dockerfile -t "$ACR_LOGIN_SERVER/control-plane-api:latest" ../..
-docker build -f ../../apps/inference-service/Dockerfile -t "$ACR_LOGIN_SERVER/inference-service:latest" ../..
-docker build -f ../../apps/rag-service/Dockerfile -t "$ACR_LOGIN_SERVER/rag-service:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/control-plane-api/Dockerfile -t "$ACR_LOGIN_SERVER/control-plane-api:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/inference-service/Dockerfile -t "$ACR_LOGIN_SERVER/inference-service:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/rag-service/Dockerfile -t "$ACR_LOGIN_SERVER/rag-service:latest" ../..
 docker build \
+  --platform linux/amd64 \
   -f ../../apps/web-console/Dockerfile \
   --build-arg VITE_CONTROL_PLANE_API_URL="${VITE_CONTROL_PLANE_API_URL:-http://localhost:8000}" \
   --build-arg VITE_RAG_SERVICE_URL="${VITE_RAG_SERVICE_URL:-http://localhost:8002}" \
@@ -101,6 +102,8 @@ docker push "$ACR_LOGIN_SERVER/inference-service:latest"
 docker push "$ACR_LOGIN_SERVER/rag-service:latest"
 docker push "$ACR_LOGIN_SERVER/web-console:latest"
 ```
+
+The explicit `linux/amd64` platform matters on Apple Silicon macOS. Terraform deploys image tags from ACR, but Docker decides the image CPU architecture at build time. Building with `--platform linux/amd64` prevents an ARM-only local image from being pushed to Azure Container Apps.
 
 Then deploy the full stack:
 

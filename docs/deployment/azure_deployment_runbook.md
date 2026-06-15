@@ -34,10 +34,11 @@ terraform apply \
 ACR_LOGIN_SERVER="$(terraform output -raw acr_login_server)"
 az acr login --name "${ACR_LOGIN_SERVER%%.azurecr.io}"
 
-docker build -f ../../apps/control-plane-api/Dockerfile -t "$ACR_LOGIN_SERVER/control-plane-api:latest" ../..
-docker build -f ../../apps/inference-service/Dockerfile -t "$ACR_LOGIN_SERVER/inference-service:latest" ../..
-docker build -f ../../apps/rag-service/Dockerfile -t "$ACR_LOGIN_SERVER/rag-service:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/control-plane-api/Dockerfile -t "$ACR_LOGIN_SERVER/control-plane-api:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/inference-service/Dockerfile -t "$ACR_LOGIN_SERVER/inference-service:latest" ../..
+docker build --platform linux/amd64 -f ../../apps/rag-service/Dockerfile -t "$ACR_LOGIN_SERVER/rag-service:latest" ../..
 docker build \
+  --platform linux/amd64 \
   -f ../../apps/web-console/Dockerfile \
   --build-arg VITE_CONTROL_PLANE_API_URL=http://localhost:8000 \
   --build-arg VITE_RAG_SERVICE_URL=http://localhost:8002 \
@@ -51,6 +52,8 @@ docker push "$ACR_LOGIN_SERVER/web-console:latest"
 ```
 
 The first web image can point at localhost because it will be rebuilt by the GitHub deployment workflow after Container App URLs exist.
+
+The explicit `linux/amd64` platform is important when bootstrapping from Apple Silicon macOS. Terraform only references image tags in ACR; it does not control image CPU architecture. Without an explicit platform, a local Mac build can push an ARM-only image that is not suitable for the default Azure Container Apps runtime.
 
 ## 3. Apply Full Terraform
 

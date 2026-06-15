@@ -43,6 +43,7 @@ env:
   AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
   AZURE_EVENTHUB_CONNECTION_STRING: ${{ secrets.AZURE_EVENTHUB_CONNECTION_STRING }}
   APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+  DOCKER_BUILD_PLATFORM: linux/amd64
 
 jobs:
   build-and-deploy:
@@ -125,10 +126,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build -f apps/control-plane-api/Dockerfile -t "$CONTROL_PLANE_IMAGE" .
-          docker build -f apps/inference-service/Dockerfile -t "$INFERENCE_IMAGE" .
-          docker build -f apps/rag-service/Dockerfile -t "$RAG_IMAGE" .
+          docker build --platform "$DOCKER_BUILD_PLATFORM" -f apps/control-plane-api/Dockerfile -t "$CONTROL_PLANE_IMAGE" .
+          docker build --platform "$DOCKER_BUILD_PLATFORM" -f apps/inference-service/Dockerfile -t "$INFERENCE_IMAGE" .
+          docker build --platform "$DOCKER_BUILD_PLATFORM" -f apps/rag-service/Dockerfile -t "$RAG_IMAGE" .
           docker build \
+            --platform "$DOCKER_BUILD_PLATFORM" \
             -f apps/web-console/Dockerfile \
             --build-arg VITE_CONTROL_PLANE_API_URL="$WEB_BUILD_CONTROL_PLANE_URL" \
             --build-arg VITE_RAG_SERVICE_URL="$WEB_BUILD_RAG_URL" \

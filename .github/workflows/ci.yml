@@ -9,6 +9,8 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      DOCKER_PLATFORM: linux/amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v4

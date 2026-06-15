@@ -24,6 +24,12 @@ make local-up
 
 `docker-compose.yml` health-gates PostgreSQL, Redis, MLflow, and the app services so startup order is deterministic. MLflow uses the v3 container image to match the training pipeline’s current logging API.
 
+Local app-service Docker builds default to `linux/amd64` for Azure Container Apps parity, which is especially important on Apple Silicon macOS. To build native local images only for local experimentation, override the platform:
+
+```bash
+DOCKER_PLATFORM=linux/arm64 make docker-build
+```
+
 Apply database migrations if you run services outside Compose:
 
 ```bash
