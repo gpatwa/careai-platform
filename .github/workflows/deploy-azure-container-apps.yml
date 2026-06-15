@@ -1,0 +1,334 @@
+name: deploy-azure-container-apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Container image tag to build and deploy. Defaults to the commit SHA."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-azure-container-apps-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  CONTROL_PLANE_APP_NAME: ${{ vars.CONTROL_PLANE_APP_NAME }}
+  INFERENCE_APP_NAME: ${{ vars.INFERENCE_APP_NAME }}
+  RAG_APP_NAME: ${{ vars.RAG_APP_NAME }}
+  WEB_CONSOLE_APP_NAME: ${{ vars.WEB_CONSOLE_APP_NAME }}
+  CONTROL_PLANE_URL: ${{ vars.CONTROL_PLANE_URL }}
+  INFERENCE_URL: ${{ vars.INFERENCE_URL }}
+  RAG_URL: ${{ vars.RAG_URL }}
+  AZURE_AI_SEARCH_ENDPOINT: ${{ vars.AZURE_AI_SEARCH_ENDPOINT }}
+  AZURE_AI_SEARCH_INDEX: ${{ vars.AZURE_AI_SEARCH_INDEX }}
+  AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+  AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  REDIS_URL: ${{ secrets.REDIS_URL }}
+  AZURE_AI_SEARCH_API_KEY: ${{ secrets.AZURE_AI_SEARCH_API_KEY }}
+  AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+  APPLICATIONINSIGHTS_CONNECTION_STRING: ${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}
+
+jobs:
+  build-and-deploy:
+    name: Build, push, deploy, and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${AZURE_CLIENT_ID:?Set GitHub variable AZURE_CLIENT_ID for OIDC login.}"
+          : "${AZURE_TENANT_ID:?Set GitHub variable AZURE_TENANT_ID for OIDC login.}"
+          : "${AZURE_SUBSCRIPTION_ID:?Set GitHub variable AZURE_SUBSCRIPTION_ID for OIDC login.}"
+          : "${AZURE_RESOURCE_GROUP:?Set GitHub variable AZURE_RESOURCE_GROUP from Terraform output resource_group_name.}"
+          : "${ACR_LOGIN_SERVER:?Set GitHub variable ACR_LOGIN_SERVER from Terraform output acr_login_server.}"
+          : "${CONTROL_PLANE_APP_NAME:?Set GitHub variable CONTROL_PLANE_APP_NAME.}"
+          : "${INFERENCE_APP_NAME:?Set GitHub variable INFERENCE_APP_NAME.}"
+          : "${RAG_APP_NAME:?Set GitHub variable RAG_APP_NAME.}"
+          : "${WEB_CONSOLE_APP_NAME:?Set GitHub variable WEB_CONSOLE_APP_NAME.}"
+
+      - name: Azure login with OpenID Connect
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Azure Container Apps CLI support
+        shell: bash
+        run: az extension add --name containerapp --upgrade --yes
+
+      - name: Resolve image tag and ACR name
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_tag="${{ inputs.image_tag }}"
+          if [ -z "$image_tag" ]; then
+            image_tag="${GITHUB_SHA}"
+          fi
+          acr_name="${ACR_LOGIN_SERVER%%.azurecr.io}"
+          {
+            echo "IMAGE_TAG=$image_tag"
+            echo "ACR_NAME=$acr_name"
+            echo "CONTROL_PLANE_IMAGE=$ACR_LOGIN_SERVER/control-plane-api:$image_tag"
+            echo "INFERENCE_IMAGE=$ACR_LOGIN_SERVER/inference-service:$image_tag"
+            echo "RAG_IMAGE=$ACR_LOGIN_SERVER/rag-service:$image_tag"
+            echo "WEB_CONSOLE_IMAGE=$ACR_LOGIN_SERVER/web-console:$image_tag"
+          } >> "$GITHUB_ENV"
+
+      - name: Log in to Azure Container Registry
+        shell: bash
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build service images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f apps/control-plane-api/Dockerfile -t "$CONTROL_PLANE_IMAGE" .
+          docker build -f apps/inference-service/Dockerfile -t "$INFERENCE_IMAGE" .
+          docker build -f apps/rag-service/Dockerfile -t "$RAG_IMAGE" .
+          docker build \
+            -f apps/web-console/Dockerfile \
+            --build-arg VITE_CONTROL_PLANE_API_URL="${CONTROL_PLANE_URL:-http://localhost:8000}" \
+            --build-arg VITE_RAG_SERVICE_URL="${RAG_URL:-http://localhost:8002}" \
+            -t "$WEB_CONSOLE_IMAGE" \
+            apps/web-console
+
+      - name: Push service images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "$CONTROL_PLANE_IMAGE"
+          docker push "$INFERENCE_IMAGE"
+          docker push "$RAG_IMAGE"
+          docker push "$WEB_CONSOLE_IMAGE"
+
+      - name: Deploy Container Apps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          app_url() {
+            local app_name="$1"
+            az containerapp show \
+              --name "$app_name" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "properties.configuration.ingress.fqdn" \
+              --output tsv | sed 's#^#https://#'
+          }
+
+          set_secret_if_present() {
+            local app_name="$1"
+            local secret_name="$2"
+            local secret_value="$3"
+            if [ -n "$secret_value" ]; then
+              az containerapp secret set \
+                --name "$app_name" \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --secrets "$secret_name=$secret_value" \
+                --output none
+            fi
+          }
+
+          update_app() {
+            local app_name="$1"
+            local image="$2"
+            shift 2
+            az containerapp update \
+              --name "$app_name" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --image "$image" \
+              --output none
+
+            if [ "$#" -gt 0 ]; then
+              az containerapp update \
+                --name "$app_name" \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --set-env-vars "$@" \
+                --output none
+            fi
+          }
+
+          CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-$(app_url "$CONTROL_PLANE_APP_NAME")}"
+          INFERENCE_URL="${INFERENCE_URL:-$(app_url "$INFERENCE_APP_NAME")}"
+          RAG_URL="${RAG_URL:-$(app_url "$RAG_APP_NAME")}"
+          SEARCH_INDEX="${AZURE_AI_SEARCH_INDEX:-careai-rag-chunks}"
+
+          for app_name in "$CONTROL_PLANE_APP_NAME" "$INFERENCE_APP_NAME" "$RAG_APP_NAME"; do
+            set_secret_if_present "$app_name" "database-url" "$DATABASE_URL"
+            set_secret_if_present "$app_name" "redis-url" "$REDIS_URL"
+            set_secret_if_present "$app_name" "control-plane-url" "$CONTROL_PLANE_URL"
+            set_secret_if_present "$app_name" "azure-ai-search-endpoint" "$AZURE_AI_SEARCH_ENDPOINT"
+            set_secret_if_present "$app_name" "azure-ai-search-index" "$SEARCH_INDEX"
+            set_secret_if_present "$app_name" "azure-ai-search-api-key" "$AZURE_AI_SEARCH_API_KEY"
+            set_secret_if_present "$app_name" "azure-openai-endpoint" "$AZURE_OPENAI_ENDPOINT"
+            set_secret_if_present "$app_name" "azure-openai-deployment" "$AZURE_OPENAI_DEPLOYMENT"
+            set_secret_if_present "$app_name" "azure-openai-api-key" "$AZURE_OPENAI_API_KEY"
+            set_secret_if_present "$app_name" "appinsights-connection-string" "$APPLICATIONINSIGHTS_CONNECTION_STRING"
+          done
+
+          control_env=(
+            "SERVICE_NAME=control-plane-api"
+            "SERVICE_PORT=8000"
+          )
+          if [ -n "$DATABASE_URL" ]; then
+            control_env+=("DATABASE_URL=secretref:database-url")
+            control_env+=("CONTROL_PLANE_DATABASE_URL=secretref:database-url")
+          fi
+          if [ -n "$REDIS_URL" ]; then
+            control_env+=("REDIS_URL=secretref:redis-url")
+          fi
+          if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
+            control_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
+          fi
+          update_app "$CONTROL_PLANE_APP_NAME" "$CONTROL_PLANE_IMAGE" "${control_env[@]}"
+
+          inference_env=(
+            "SERVICE_NAME=inference-service"
+            "SERVICE_PORT=8001"
+            "CONTROL_PLANE_URL=secretref:control-plane-url"
+            "CONTROL_PLANE_API_URL=secretref:control-plane-url"
+            "CLAIMS_RISK_FEATURE_VERSION=claims-risk-features-v1"
+            "INFERENCE_AUDIT_ENABLED=true"
+            "INFERENCE_MONITORING_ENABLED=true"
+          )
+          if [ -n "$REDIS_URL" ]; then
+            inference_env+=("REDIS_URL=secretref:redis-url")
+          fi
+          if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
+            inference_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
+          fi
+          update_app "$INFERENCE_APP_NAME" "$INFERENCE_IMAGE" "${inference_env[@]}"
+
+          rag_env=(
+            "SERVICE_NAME=rag-service"
+            "SERVICE_PORT=8002"
+            "CONTROL_PLANE_URL=secretref:control-plane-url"
+            "CONTROL_PLANE_API_URL=secretref:control-plane-url"
+            "RAG_DOCS_DIR=data/synthetic_docs"
+            "RAG_LOCAL_INDEX_PATH=data/local/rag-index.json"
+            "RAG_AUDIT_ENABLED=true"
+            "AZURE_AI_SEARCH_INDEX=secretref:azure-ai-search-index"
+            "AZURE_AI_SEARCH_INDEX_NAME=secretref:azure-ai-search-index"
+          )
+          if [ -n "$AZURE_AI_SEARCH_ENDPOINT" ]; then
+            rag_env+=("AZURE_AI_SEARCH_ENDPOINT=secretref:azure-ai-search-endpoint")
+          fi
+          if [ -n "$AZURE_AI_SEARCH_API_KEY" ]; then
+            rag_env+=("AZURE_AI_SEARCH_API_KEY=secretref:azure-ai-search-api-key")
+          fi
+          if [ -n "$AZURE_OPENAI_ENDPOINT" ]; then
+            rag_env+=("AZURE_OPENAI_ENDPOINT=secretref:azure-openai-endpoint")
+          fi
+          if [ -n "$AZURE_OPENAI_DEPLOYMENT" ]; then
+            rag_env+=("AZURE_OPENAI_DEPLOYMENT=secretref:azure-openai-deployment")
+            rag_env+=("AZURE_OPENAI_CHAT_DEPLOYMENT=secretref:azure-openai-deployment")
+            rag_env+=("AZURE_OPENAI_EMBEDDING_DEPLOYMENT=secretref:azure-openai-deployment")
+          fi
+          if [ -n "$AZURE_OPENAI_API_KEY" ]; then
+            rag_env+=("AZURE_OPENAI_API_KEY=secretref:azure-openai-api-key")
+          fi
+          if [ -n "$APPLICATIONINSIGHTS_CONNECTION_STRING" ]; then
+            rag_env+=("APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appinsights-connection-string")
+          fi
+          update_app "$RAG_APP_NAME" "$RAG_IMAGE" "${rag_env[@]}"
+
+          update_app "$WEB_CONSOLE_APP_NAME" "$WEB_CONSOLE_IMAGE"
+
+          {
+            echo "CONTROL_PLANE_URL=$CONTROL_PLANE_URL"
+            echo "INFERENCE_URL=$INFERENCE_URL"
+            echo "RAG_URL=$RAG_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Post-deployment smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl_health() {
+            local url="$1"
+            curl --fail --silent --show-error \
+              --retry 12 \
+              --retry-delay 10 \
+              --retry-all-errors \
+              "$url/healthz"
+          }
+
+          curl_health "$CONTROL_PLANE_URL"
+          curl_health "$INFERENCE_URL"
+          curl_health "$RAG_URL"
+
+          curl --fail --silent --show-error \
+            --retry 6 \
+            --retry-delay 10 \
+            --retry-all-errors \
+            -X POST "$INFERENCE_URL/predict/claims-risk" \
+            -H "content-type: application/json" \
+            -H "x-correlation-id: gha-smoke-inference-${GITHUB_RUN_ID}" \
+            -d '{
+              "request_id": "gha-smoke-inference",
+              "features": {
+                "age_bucket": "50-64",
+                "plan_type": "silver",
+                "prior_claim_count": 3,
+                "recent_visit_count": 2,
+                "medication_count": 2,
+                "chronic_condition_count": 1,
+                "region_code": "R01"
+              }
+            }' | tee /tmp/inference-smoke.json
+
+          curl --fail --silent --show-error \
+            --retry 6 \
+            --retry-delay 10 \
+            --retry-all-errors \
+            -X POST "$RAG_URL/rag/query" \
+            -H "content-type: application/json" \
+            -H "x-correlation-id: gha-smoke-rag-${GITHUB_RUN_ID}" \
+            -d '{
+              "user_id": "gha-smoke-user",
+              "role": "care_manager",
+              "question": "What documentation is needed for prior authorization review?",
+              "top_k": 2
+            }' | tee /tmp/rag-smoke.json
+
+          python - <<'PY'
+          import json
+
+          with open("/tmp/inference-smoke.json", "r", encoding="utf-8") as handle:
+              inference = json.load(handle)
+          assert 0 <= inference["prediction_score"] <= 1
+          assert inference["risk_band"] in {"low", "medium", "high"}
+
+          with open("/tmp/rag-smoke.json", "r", encoding="utf-8") as handle:
+              rag = json.load(handle)
+          assert rag["answer"]
+          assert "citations" in rag
+          PY
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          {
+            echo "### Azure Container Apps deployment"
+            echo
+            echo "- Image tag: \`$IMAGE_TAG\`"
+            echo "- Control plane: $CONTROL_PLANE_URL"
+            echo "- Inference service: $INFERENCE_URL"
+            echo "- RAG service: $RAG_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

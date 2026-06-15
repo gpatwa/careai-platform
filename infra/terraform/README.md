@@ -116,6 +116,7 @@ The Vite web console reads API URLs at image build time. For a polished Azure-ho
 Terraform outputs:
 
 - `acr_login_server`
+- `container_apps_names`
 - `container_apps_urls`
 - `azure_ai_search_endpoint`
 - `storage_account_name`
@@ -124,6 +125,60 @@ Terraform outputs:
 - optional `postgres_fqdn`
 - optional `redis_hostname`
 - optional `azure_ml_workspace_name`
+
+## GitHub Actions Deployment
+
+After Terraform has created the Azure resources, use `.github/workflows/deploy-azure-container-apps.yml` to build images, push to ACR, update Container Apps, and run smoke tests.
+
+The workflow is configured for GitHub OpenID Connect. Create an Entra ID app registration or managed identity with federated credentials for this repository, then grant it permissions to push images and update Container Apps. Minimum practical roles for the demo resource group:
+
+- `Contributor` on the resource group.
+- `AcrPush` on the Azure Container Registry.
+
+Create GitHub repository variables:
+
+```bash
+terraform output -raw resource_group_name
+terraform output -raw acr_login_server
+terraform output -json container_apps_names
+terraform output -json container_apps_urls
+terraform output -raw azure_ai_search_endpoint
+```
+
+| GitHub variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | Federated credential client ID. |
+| `AZURE_TENANT_ID` | Azure tenant ID. |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID. |
+| `AZURE_RESOURCE_GROUP` | Terraform `resource_group_name`. |
+| `ACR_LOGIN_SERVER` | Terraform `acr_login_server`. |
+| `CONTROL_PLANE_APP_NAME` | `container_apps_names.control_plane_api`. |
+| `INFERENCE_APP_NAME` | `container_apps_names.inference_service`. |
+| `RAG_APP_NAME` | `container_apps_names.rag_service`. |
+| `WEB_CONSOLE_APP_NAME` | `container_apps_names.web_console`. |
+| `CONTROL_PLANE_URL` | `container_apps_urls.control_plane_api`. |
+| `INFERENCE_URL` | `container_apps_urls.inference_service`. |
+| `RAG_URL` | `container_apps_urls.rag_service`. |
+| `AZURE_AI_SEARCH_ENDPOINT` | Terraform `azure_ai_search_endpoint`, when using Azure AI Search. |
+| `AZURE_AI_SEARCH_INDEX` | Search index name, usually `careai-rag-chunks`. |
+| `AZURE_OPENAI_ENDPOINT` | Optional Azure OpenAI endpoint. |
+| `AZURE_OPENAI_DEPLOYMENT` | Optional Azure OpenAI chat or embedding deployment name. |
+
+Create GitHub repository secrets when those integrations are enabled:
+
+| GitHub secret | Notes |
+| --- | --- |
+| `DATABASE_URL` | Optional database URL. Maps to `DATABASE_URL` and `CONTROL_PLANE_DATABASE_URL`. |
+| `REDIS_URL` | Optional Redis URL. |
+| `AZURE_AI_SEARCH_API_KEY` | Optional until the app supports managed identity data-plane auth for Search. |
+| `AZURE_OPENAI_API_KEY` | Optional; omitted values keep RAG in local mock mode. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional Application Insights connection string. |
+
+Run the workflow from the GitHub Actions tab. It accepts an optional `image_tag`; when omitted it deploys the commit SHA. The workflow stores runtime configuration as Container App secrets and references them from environment variables. If Azure OpenAI is not configured, the RAG smoke test uses the local deterministic mock provider.
+
+If OpenID Connect is not available in your organization, create a service principal scoped to the demo resource group, store its JSON credentials in a GitHub secret such as `AZURE_CREDENTIALS`, and replace the `azure/login` step with `creds: ${{ secrets.AZURE_CREDENTIALS }}`. OIDC is preferred because it avoids long-lived cloud credentials in GitHub.
+
+The workflow is manual-only by default to avoid accidental Azure spend. To deploy on every push to `main`, add a `push` trigger after the environment is stable.
 
 ## Security Notes
 

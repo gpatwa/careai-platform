@@ -18,6 +18,16 @@ output "container_apps_urls" {
   }
 }
 
+output "container_apps_names" {
+  description = "Container App resource names for GitHub Actions deployment variables."
+  value = {
+    control_plane_api = azurerm_container_app.control_plane.name
+    inference_service = azurerm_container_app.inference.name
+    rag_service       = azurerm_container_app.rag.name
+    web_console       = azurerm_container_app.web_console.name
+  }
+}
+
 output "azure_ai_search_endpoint" {
   description = "Azure AI Search service endpoint."
   value       = "https://${azurerm_search_service.this.name}.search.windows.net"

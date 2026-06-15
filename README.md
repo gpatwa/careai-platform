@@ -473,6 +473,8 @@ terraform apply
 
 The stack creates ACR, Container Apps, Log Analytics, Application Insights, Key Vault, Storage, Azure AI Search, and optional Event Hubs, PostgreSQL, Redis, and Azure ML resources. See [infra/terraform/README.md](infra/terraform/README.md) for image push commands, variables, outputs, and cost/security notes.
 
+After Terraform has created the Azure resources, run the `deploy-azure-container-apps` GitHub Actions workflow to build images, push to ACR, update Container Apps, and run smoke tests. The workflow uses Azure OpenID Connect and GitHub repository variables/secrets; setup details are in [infra/terraform/README.md](infra/terraform/README.md#github-actions-deployment).
+
 ## Safety and Governance
 
 - Synthetic healthcare-like data only.
