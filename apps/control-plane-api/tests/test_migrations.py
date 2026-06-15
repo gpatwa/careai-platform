@@ -23,7 +23,7 @@ def test_upgrade_database_creates_model_error_events_table(tmp_path) -> None:
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert revision == "0001_initial_control_plane_schema"
+    assert revision == "0001_initial_schema"
     deployment_columns = {column["name"] for column in inspector.get_columns("deployments")}
     assert {
         "champion_model_id",

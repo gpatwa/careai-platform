@@ -30,20 +30,17 @@ services:
   mlflow:
     image: ghcr.io/mlflow/mlflow:v3.13.0
     container_name: careai-mlflow
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      MLFLOW_BACKEND_STORE_URI: postgresql://careai:careai_dev_password@postgres:5432/careai
+      MLFLOW_BACKEND_STORE_URI: sqlite:////mlflow/mlflow.db
       MLFLOW_ARTIFACT_ROOT: /mlflow/artifacts
     ports:
-      - "5000:5000"
+      - "${MLFLOW_HOST_PORT:-5001}:5000"
     volumes:
       - mlflow-artifacts:/mlflow/artifacts
     command:
       - /bin/sh
       - -c
-      - pip install psycopg2-binary >/tmp/mlflow-pip.log 2>&1 && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri "$$MLFLOW_BACKEND_STORE_URI" --default-artifact-root "$$MLFLOW_ARTIFACT_ROOT"
+      - mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri "$$MLFLOW_BACKEND_STORE_URI" --artifacts-destination "$$MLFLOW_ARTIFACT_ROOT"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()\""]
       interval: 10s

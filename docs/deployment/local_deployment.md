@@ -22,7 +22,7 @@ Start local dependencies and containerized app services:
 make local-up
 ```
 
-`docker-compose.yml` health-gates PostgreSQL, Redis, MLflow, and the app services so startup order is deterministic. MLflow uses the v3 container image to match the training pipeline’s current logging API.
+`docker-compose.yml` health-gates PostgreSQL, Redis, MLflow, and the app services so startup order is deterministic. MLflow uses the v3 container image to match the training pipeline’s current logging API, and it keeps its tracking metadata in a local SQLite file under the MLflow volume so it does not collide with the control-plane Postgres migrations.
 
 Local app-service Docker builds default to `linux/amd64` for Azure Container Apps parity, which is especially important on Apple Silicon macOS. To build native local images only for local experimentation, override the platform:
 
@@ -45,7 +45,7 @@ make db-upgrade
 | Control plane docs | `http://localhost:8000/docs` |
 | Inference | `http://localhost:8001` |
 | RAG | `http://localhost:8002` |
-| MLflow | `http://localhost:5000` |
+| MLflow | `http://localhost:5001` |
 
 Health checks:
 

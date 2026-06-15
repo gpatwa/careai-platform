@@ -16,7 +16,7 @@ Open these after the script completes:
 
 - Web console: `http://localhost:3000`
 - Control plane API docs: `http://localhost:8000/docs`
-- MLflow: `http://localhost:5000`
+- MLflow: `http://localhost:5001`
 
 ## 10-Minute Walkthrough
 
@@ -54,7 +54,7 @@ python -m train_claims_risk.generate_data \
 python -m train_claims_risk.train \
   --data data/local/demo/synthetic_claims.csv \
   --register-control-plane-url http://localhost:8000 \
-  --tracking-uri http://localhost:5000
+  --tracking-uri http://localhost:5001
 ```
 
 Explain that the data generator produces only aggregate synthetic fields such as age bucket, plan type, prior claim count, visit count, medication count, chronic condition count, synthetic region code, and a synthetic high-risk label.
@@ -231,7 +231,7 @@ make local-down
 
 ## Troubleshooting
 
-- Docker ports are already in use: stop local processes on ports `3000`, `5000`, `8000`, `8001`, `8002`, `5432`, or `6379`, or run with `DEMO_START_SERVICES=false` if services are already healthy.
+- Docker ports are already in use: stop local processes on ports `3000`, `5001`, `8000`, `8001`, `8002`, `5432`, or `6379`, or run with `DEMO_START_SERVICES=false` if services are already healthy.
 - Services are slow to start: rerun `scripts/demo_local.sh`. The script is resumable and overwrites generated artifacts under `data/local/demo/`.
 - `make setup` fails because Node.js is missing: install Node.js LTS or rerun with `DEMO_SKIP_SETUP=true` after Python dependencies are installed.
 - MLflow is unavailable: check `docker compose logs mlflow postgres`. Training can use a local file store by setting `MLFLOW_TRACKING_URI=file:$(pwd)/mlruns`, but the interview script defaults to the MLflow container.

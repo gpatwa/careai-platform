@@ -3,7 +3,7 @@ from collections.abc import Iterable
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0001_initial_control_plane_schema"
+revision = "0001_initial_schema"
 down_revision = None
 branch_labels = None
 depends_on = None

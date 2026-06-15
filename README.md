@@ -162,7 +162,7 @@ Local endpoints:
 - Control plane API docs: `http://localhost:8000/docs`
 - Inference service: `http://localhost:8001/healthz`
 - RAG service: `http://localhost:8002/healthz`
-- MLflow: `http://localhost:5000`
+- MLflow: `http://localhost:5001`
 
 Run the complete local interview demo:
 
