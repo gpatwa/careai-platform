@@ -123,6 +123,8 @@ Run the API services:
 Run the frontend:
 
 ```bash
+export VITE_CONTROL_PLANE_API_URL=http://localhost:8000
+export VITE_RAG_SERVICE_URL=http://localhost:8002
 npm --prefix apps/web-console run dev
 ```
 
@@ -150,6 +152,21 @@ Local endpoints:
 - Inference service: `http://localhost:8001/healthz`
 - RAG service: `http://localhost:8002/healthz`
 - MLflow: `http://localhost:5000`
+
+## Web Console Demo
+
+The web console is a TypeScript/Vite interview dashboard for the control plane, MLOps lifecycle, LLMOps lifecycle, monitoring, and governance views. It tries the local APIs first and falls back to synthetic mock data if one of the services is offline, which keeps the interview flow usable while infrastructure is starting.
+
+Demo flow:
+
+1. Open `http://localhost:3000`.
+2. Review the Overview dashboard for model stages, deployments, drift, audit events, and RAG evaluation status.
+3. Open Models, select `claims-risk`, and use the promote button to walk through `dev -> candidate -> staging -> approved -> production`.
+4. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
+5. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
+6. Open Governance to show approvals, audit events, model card summaries, prompt card summaries, and evaluation runs.
+
+Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 
 ## Control Plane Examples
 
@@ -448,7 +465,7 @@ careai-drift-check \
 - [x] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [x] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] GenAI evaluation pipeline with RAG quality, safety, latency, and promotion-gate metrics.
-- [x] Simple TypeScript demo UI skeleton for platform workflows and governance views.
+- [x] Simple TypeScript demo UI for platform workflows, monitoring, RAG, and governance views.
 - [ ] Terraform implementation under `infra/terraform` for Azure Container Apps, ACR, Key Vault, Storage, PostgreSQL, Redis, Event Hubs, Log Analytics, Application Insights, and Azure AI Search.
 - [x] GitHub Actions CI placeholder under `.github/workflows`.
 - [ ] Optional Azure ML workspace integration.
