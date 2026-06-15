@@ -538,8 +538,8 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">careai-platform</p>
-          <h1>Interview Demo Console</h1>
+          <p className="eyebrow">Enterprise MLOps + LLMOps</p>
+          <h1>careAI Platform</h1>
         </div>
         <div className={`connection connection-${loadState}`}>
           <span>{loadState.toUpperCase()}</span>
