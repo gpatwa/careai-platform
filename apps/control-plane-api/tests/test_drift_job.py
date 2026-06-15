@@ -36,9 +36,7 @@ def test_run_once_posts_drift_check(monkeypatch) -> None:
     )
 
     assert result == {"drift_status": "green", "snapshot_id": "snapshot-001"}
-    assert captured["url"] == (
-        "http://localhost:8000/monitoring/models/claims-risk/drift-check"
-    )
+    assert captured["url"] == ("http://localhost:8000/monitoring/models/claims-risk/drift-check")
     assert captured["json"] == {"lookback_hours": 12, "minimum_events": 5}
 
 

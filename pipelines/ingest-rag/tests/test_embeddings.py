@@ -56,8 +56,6 @@ def test_azure_openai_embedding_provider_posts_expected_payload(monkeypatch) -> 
 
     assert vectors == [[0.1, 0.2, 0.3]]
     assert provider.dimension == 3
-    assert captured["url"].endswith(
-        "/openai/deployments/embed/embeddings?api-version=2024-02-01"
-    )
+    assert captured["url"].endswith("/openai/deployments/embed/embeddings?api-version=2024-02-01")
     assert captured["headers"]["api-key"] == "test-key"
     assert captured["json"] == {"input": ["synthetic policy"], "dimensions": 3}

@@ -133,6 +133,7 @@ Validate the scaffold:
 ```bash
 make test
 make lint
+make security-check
 make docker-build
 ```
 
@@ -141,6 +142,16 @@ Stop local dependencies:
 ```bash
 make local-down
 ```
+
+Run individual services in Docker after local dependencies are configured:
+
+```bash
+make docker-run-control-plane
+make docker-run-inference
+make docker-run-rag
+```
+
+`make security-check` runs advisory-oriented checks in non-blocking mode so CI remains stable when external vulnerability feeds change. Use the output as a review signal before releases.
 
 Configuration should be documented in `.env.example`. Do not commit real `.env` files, secrets, credentials, tokens, or connection strings.
 

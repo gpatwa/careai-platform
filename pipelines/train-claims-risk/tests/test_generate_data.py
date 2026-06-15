@@ -32,4 +32,3 @@ def test_generate_synthetic_claims_is_deterministic() -> None:
 def test_generate_synthetic_claims_rejects_non_positive_rows() -> None:
     with pytest.raises(ValueError, match="rows must be greater than zero"):
         generate_synthetic_claims(rows=0)
-

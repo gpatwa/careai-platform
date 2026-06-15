@@ -25,4 +25,3 @@ __all__ = [
     "set_correlation_id",
     "setup_json_logging",
 ]
-

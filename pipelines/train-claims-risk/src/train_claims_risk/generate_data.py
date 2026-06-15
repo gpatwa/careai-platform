@@ -25,15 +25,19 @@ def generate_synthetic_claims(rows: int, seed: int = DEFAULT_SEED) -> pd.DataFra
         .map({"18-34": 0.0, "35-49": 0.35, "50-64": 0.75, "65+": 1.1})
         .to_numpy()
     )
-    plan_factor = pd.Series(plan_type).map(
-        {
-            "bronze": 0.35,
-            "silver": 0.15,
-            "gold": 0.0,
-            "platinum": -0.10,
-            "medicare_advantage": 0.45,
-        }
-    ).to_numpy()
+    plan_factor = (
+        pd.Series(plan_type)
+        .map(
+            {
+                "bronze": 0.35,
+                "silver": 0.15,
+                "gold": 0.0,
+                "platinum": -0.10,
+                "medicare_advantage": 0.45,
+            }
+        )
+        .to_numpy()
+    )
 
     chronic_condition_count = np.clip(rng.poisson(0.7 + age_factor * 0.9), 0, 8)
     prior_claim_count = np.clip(rng.poisson(1.6 + chronic_condition_count * 0.8), 0, 24)

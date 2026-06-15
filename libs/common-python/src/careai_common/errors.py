@@ -8,4 +8,3 @@ class ConfigurationError(CareAIError):
 
 class DependencyUnavailableError(CareAIError):
     """Raised when a platform dependency is not reachable."""
-

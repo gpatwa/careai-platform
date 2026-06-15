@@ -29,4 +29,3 @@ def test_write_audit_event_persists_correlation_id() -> None:
     finally:
         session_generator.close()
         clear_correlation_id(token)
-

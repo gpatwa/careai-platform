@@ -32,4 +32,3 @@ def load_settings(service_name: str, default_port: int) -> AppSettings:
         mlflow_tracking_uri=os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"),
         synthetic_data_seed=int(os.getenv("SYNTHETIC_DATA_SEED", "20260614")),
     )
-

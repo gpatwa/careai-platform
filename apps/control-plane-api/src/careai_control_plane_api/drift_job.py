@@ -13,9 +13,7 @@ def run_once(
     lookback_hours: int,
     minimum_events: int,
 ) -> dict[str, Any]:
-    endpoint = (
-        f"{control_plane_url.rstrip('/')}/monitoring/models/{model_name}/drift-check"
-    )
+    endpoint = f"{control_plane_url.rstrip('/')}/monitoring/models/{model_name}/drift-check"
     payload = {"lookback_hours": lookback_hours, "minimum_events": minimum_events}
     with httpx.Client(timeout=10.0) as client:
         response = client.post(endpoint, json=payload)

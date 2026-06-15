@@ -113,9 +113,12 @@ services:
   web-console:
     build:
       context: apps/web-console
+      args:
+        VITE_CONTROL_PLANE_API_URL: ${VITE_CONTROL_PLANE_API_URL:-http://localhost:8000}
+        VITE_RAG_SERVICE_URL: ${VITE_RAG_SERVICE_URL:-http://localhost:8002}
     container_name: careai-web-console
     ports:
-      - "3000:3000"
+      - "3000:8080"
     depends_on:
       - control-plane-api
       - inference-service

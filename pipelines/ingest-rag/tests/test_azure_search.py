@@ -85,11 +85,7 @@ def test_azure_search_client_sends_create_upload_and_search_requests(monkeypatch
     )
 
     assert calls[0]["method"] == "PUT"
-    assert "/indexes/careai-test?allowIndexDowntime=true&api-version=2026-04-01" in calls[0][
-        "url"
-    ]
+    assert "/indexes/careai-test?allowIndexDowntime=true&api-version=2026-04-01" in calls[0]["url"]
     assert calls[1]["json"]["value"][0]["@search.action"] == "upload"
     assert calls[2]["json"]["vectorQueries"][0]["fields"] == "content_vector"
-    assert calls[2]["json"]["filter"] == (
-        "allowed_roles/any(role: role eq 'model_risk_reviewer')"
-    )
+    assert calls[2]["json"]["filter"] == ("allowed_roles/any(role: role eq 'model_risk_reviewer')")

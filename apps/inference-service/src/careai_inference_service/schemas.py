@@ -69,4 +69,3 @@ class ClaimsRiskPredictionResponse(BaseModel):
 class ReloadModelResponse(BaseModel):
     reloaded: bool
     active_model: ActiveModelResponse
-

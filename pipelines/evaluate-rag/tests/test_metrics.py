@@ -18,10 +18,13 @@ def test_retrieval_hit_matches_doc_or_chunk_identifier() -> None:
 
 
 def test_citation_coverage_scores_expected_sources() -> None:
-    assert citation_coverage(
-        ["prior_authorization_policy", "member_support_playbook"],
-        ["prior_authorization_policy-0000"],
-    ) == 0.5
+    assert (
+        citation_coverage(
+            ["prior_authorization_policy", "member_support_playbook"],
+            ["prior_authorization_policy-0000"],
+        )
+        == 0.5
+    )
     assert citation_coverage([], []) == 1.0
 
 

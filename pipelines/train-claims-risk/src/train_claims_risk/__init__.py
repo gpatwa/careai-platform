@@ -8,4 +8,3 @@ from train_claims_risk.features import (
 )
 
 __all__ = ["CATEGORICAL_FEATURES", "FEATURE_COLUMNS", "LABEL_COLUMN", "NUMERIC_FEATURES"]
-

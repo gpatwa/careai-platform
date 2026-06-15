@@ -77,9 +77,7 @@ def test_role_filter_excludes_unauthorized_documents(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["retrieval_metadata"]["returned_chunks"] > 0
-    assert "claims_review_policy" not in {
-        chunk["doc_id"] for chunk in body["retrieved_chunks"]
-    }
+    assert "claims_review_policy" not in {chunk["doc_id"] for chunk in body["retrieved_chunks"]}
 
 
 def test_prompt_injection_attempt_is_rejected() -> None:

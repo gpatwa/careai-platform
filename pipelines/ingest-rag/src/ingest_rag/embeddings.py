@@ -80,9 +80,7 @@ class AzureOpenAIEmbeddingProvider(EmbeddingProvider):
             deployment=deployment,
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
             dimension=dimension,
-            requested_dimensions=(
-                int(requested_dimensions) if requested_dimensions else None
-            ),
+            requested_dimensions=(int(requested_dimensions) if requested_dimensions else None),
         )
 
     @property

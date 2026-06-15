@@ -28,4 +28,3 @@ class AuditEvent(BaseModel):
     correlation_id: str = Field(default_factory=ensure_correlation_id)
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
-

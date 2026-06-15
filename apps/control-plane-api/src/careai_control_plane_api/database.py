@@ -13,9 +13,7 @@ DEFAULT_SQLITE_URL = "sqlite:///./data/local/control-plane.db"
 
 def resolve_database_url() -> str:
     return (
-        os.getenv("CONTROL_PLANE_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or DEFAULT_SQLITE_URL
+        os.getenv("CONTROL_PLANE_DATABASE_URL") or os.getenv("DATABASE_URL") or DEFAULT_SQLITE_URL
     )
 
 

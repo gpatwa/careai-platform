@@ -53,9 +53,7 @@ def groundedness_score(answer: str, retrieved_chunks: list[RetrievedChunk]) -> f
     source_terms: set[str] = set()
     for chunk in retrieved_chunks:
         source_terms.update(
-            term
-            for term in re.findall(r"[a-z0-9_]+", chunk.excerpt.lower())
-            if len(term) > 3
+            term for term in re.findall(r"[a-z0-9_]+", chunk.excerpt.lower()) if len(term) > 3
         )
 
     overlap = len(answer_terms & source_terms) / len(answer_terms)

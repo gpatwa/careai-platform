@@ -68,9 +68,7 @@ def feature_distribution(
         if total == 0:
             distributions[column] = {}
             continue
-        distributions[column] = {
-            value: count / total for value, count in sorted(counts.items())
-        }
+        distributions[column] = {value: count / total for value, count in sorted(counts.items())}
     return distributions
 
 

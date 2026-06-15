@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 .pytest_cache/
@@ -15,8 +17,11 @@ tsconfig.tsbuildinfo
 .coverage
 htmlcov/
 .mypy_cache/
+*.log
+*.sqlite
+*.sqlite3
+*.db
 mlruns/
 data/local/
 data/*.csv
 artifacts/
-mlruns/

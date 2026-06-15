@@ -27,4 +27,3 @@ def clear_correlation_id(token: Token[str | None] | None = None) -> None:
         _correlation_id.reset(token)
     else:
         _correlation_id.set(None)
-

@@ -615,9 +615,7 @@ def get_monitoring_summary(
     model_version: str | None = Query(default=None),
 ) -> MonitoringSummaryResponse:
     events = list(session.scalars(monitoring_events_query(model_name, model_version)))
-    error_events = list(
-        session.scalars(monitoring_error_events_query(model_name, model_version))
-    )
+    error_events = list(session.scalars(monitoring_error_events_query(model_name, model_version)))
     latency_values = [event.latency_ms for event in events] + [
         event.latency_ms for event in error_events
     ]

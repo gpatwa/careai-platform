@@ -203,8 +203,6 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
 
 def keyword_evidence_text(result: RagServiceResult) -> str:
     excerpts = [
-        str(chunk.get("excerpt", ""))
-        for chunk in result.retrieved_chunks
-        if chunk.get("excerpt")
+        str(chunk.get("excerpt", "")) for chunk in result.retrieved_chunks if chunk.get("excerpt")
     ]
     return "\n".join([result.answer, *excerpts])
