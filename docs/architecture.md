@@ -14,7 +14,7 @@
 ## Service Boundaries
 
 - `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, model error events, and drift snapshots through a FastAPI/SQLAlchemy service with Alembic migrations for persistent databases.
-- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, `prediction.created` publication, and deterministic fallback scoring when no model is available.
+- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, champion/challenger traffic-split simulation, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, `prediction.created` publication, and deterministic fallback scoring when no model is available.
 - `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, RAG-facing endpoints, and `rag.query_answered` publication without raw question or answer text.
 - `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, event schemas/publishers, observability helpers, and common errors.
 
@@ -47,6 +47,12 @@ Production gates are enforced at the API boundary. A model cannot move to `produ
 The control plane stores prediction events for synthetic aggregate claims-risk features, scores, risk bands, latency, model version, and correlation IDs. Drift checks compare baseline training feature distributions from model lineage or a request body against recent serving distributions. Numeric utilization features are binned before PSI calculations so training and serving distributions remain stable and interpretable. The demo uses PSI-style metrics with deterministic `green`, `yellow`, and `red` statuses.
 
 Training-serving skew is represented by feature-level distribution differences. A `red` drift snapshot recommends rollback or human review. Latency monitoring tracks average and p95 latency; business monitoring tracks prediction score and high-risk rate. Error-rate monitoring is backed by structured model error events and SLO thresholds in the summary contract. The `careai-drift-check` CLI provides a scheduled drift-check hook for cron, GitHub Actions, or Azure Container Apps Jobs.
+
+## Deployment Safety
+
+Deployment records model safe production rollout with `champion_model_id`, optional `challenger_model_id`, `traffic_split_json`, `rollback_model_id`, and `health_status`. The control plane exposes canary, set-traffic, and rollback actions. Canary and traffic updates require percentages that sum to 100; rollback clears challenger traffic and restores all traffic to the rollback model. Reads can mark `health_status=rollback_recommended` when champion telemetry breaches latency/error SLOs or latest drift is red.
+
+The inference service simulates traffic split routing locally with deterministic request-ID hashing. It reports `selected_model_role`, selected model version, and traffic split in responses, audit metadata, monitoring events, and event envelopes. This demonstrates mature rollout behavior without needing multiple real model artifacts in the local demo.
 
 ## Event Backbone
 

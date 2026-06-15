@@ -52,6 +52,7 @@ class ActiveModelResponse(BaseModel):
     fallback_mode: bool
     feature_version: str
     warning: str | None = None
+    traffic_split_json: dict[str, int] = Field(default_factory=dict)
 
 
 class ClaimsRiskPredictionResponse(BaseModel):
@@ -59,6 +60,8 @@ class ClaimsRiskPredictionResponse(BaseModel):
     risk_band: RiskBand
     model_name: str
     model_version: str
+    selected_model_role: str = Field(default="champion")
+    traffic_split_json: dict[str, int] = Field(default_factory=dict)
     feature_version: str
     decision_reason_codes: list[str]
     correlation_id: str

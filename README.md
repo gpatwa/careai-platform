@@ -173,9 +173,10 @@ Demo flow:
 1. Open `http://localhost:3000`.
 2. Review the Overview dashboard for model stages, deployments, drift, audit events, and RAG evaluation status.
 3. Open Models, select `claims-risk`, and use the promote button to walk through `dev -> candidate -> staging -> approved -> production`.
-4. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
-5. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
-6. Open Governance to show release gates, approvals, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
+4. Open Deployments to show champion/challenger traffic split, canary status, rollback target, and safety health.
+5. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
+6. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
+7. Open Governance to show release gates, approvals, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
 
 Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 
@@ -405,6 +406,10 @@ Example response:
   "risk_band": "high",
   "model_name": "claims-risk",
   "model_version": "0.1.0",
+  "selected_model_role": "champion",
+  "traffic_split_json": {
+    "champion": 100
+  },
   "feature_version": "claims-risk-features-v1",
   "decision_reason_codes": [
     "CHRONIC_CONDITION_BURDEN",
@@ -418,6 +423,51 @@ Example response:
   "fallback_mode": false
 }
 ```
+
+Simulate champion/challenger routing locally:
+
+```bash
+export CLAIMS_RISK_TRAFFIC_SPLIT_JSON='{"champion":90,"challenger":10}'
+export CLAIMS_RISK_CHAMPION_MODEL_VERSION=0.1.0
+export CLAIMS_RISK_CHALLENGER_MODEL_VERSION=0.2.0
+```
+
+The service deterministically routes by synthetic request ID or correlation ID and includes `selected_model_role` plus the selected `model_version` in every response and monitoring event.
+
+## Deployment Safety
+
+Deployment records support champion/challenger metadata, traffic splits, rollback targets, and health status. Start a canary after creating a deployment:
+
+```bash
+curl -s -X POST http://localhost:8000/deployments/<deployment-id>/canary \
+  -H 'content-type: application/json' \
+  -d '{
+    "challenger_model_id": "<challenger-model-id>",
+    "challenger_percent": 10,
+    "actor": "release-manager",
+    "notes": "Synthetic canary rollout."
+  }'
+```
+
+Adjust traffic or rollback:
+
+```bash
+curl -s -X POST http://localhost:8000/deployments/<deployment-id>/set-traffic \
+  -H 'content-type: application/json' \
+  -d '{
+    "traffic_split_json": {
+      "<champion-model-id>": 75,
+      "<challenger-model-id>": 25
+    },
+    "actor": "release-manager"
+  }'
+
+curl -s -X POST http://localhost:8000/deployments/<deployment-id>/rollback \
+  -H 'content-type: application/json' \
+  -d '{"actor": "release-manager", "notes": "Rollback after safety trigger."}'
+```
+
+The control plane marks `health_status=rollback_recommended` when the champion model has a breached error/latency SLO or red drift snapshot. The web console Deployments page shows champion, challenger, traffic split, rollback target, and health.
 
 ## Model Monitoring
 
@@ -543,7 +593,7 @@ careai-event-consumer \
 - [x] MLOps training pipeline with experiment metadata and model registry records.
 - [x] Inference service with model loading, feature validation, safe audit events, and fallback scoring.
 - [x] Model monitoring with prediction events, numeric-bin drift snapshots, error events, SLO summaries, scheduled drift checks, and dashboard contracts.
-- [ ] Rollback controls and active model promotion wiring.
+- [x] Rollback controls, canary rollout, and champion/challenger traffic simulation.
 - [x] LLMOps document ingestion, chunking, embeddings, and Azure AI Search-compatible indexing.
 - [x] RAG API with prompt registry, evaluations, safety checks, and audit logging.
 - [x] GenAI evaluation pipeline with RAG quality, safety, latency, and promotion-gate metrics.

@@ -24,6 +24,14 @@ def test_upgrade_database_creates_model_error_events_table(tmp_path) -> None:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
     assert revision == "0001_initial_control_plane_schema"
+    deployment_columns = {column["name"] for column in inspector.get_columns("deployments")}
+    assert {
+        "champion_model_id",
+        "challenger_model_id",
+        "traffic_split_json",
+        "rollback_model_id",
+        "health_status",
+    } <= deployment_columns
 
 
 def test_prepare_schema_uses_migrations_for_persistent_database(tmp_path) -> None:
@@ -37,3 +45,5 @@ def test_prepare_schema_uses_migrations_for_persistent_database(tmp_path) -> Non
     assert "model_cards" in inspector.get_table_names()
     assert "prompt_cards" in inspector.get_table_names()
     assert "alembic_version" in inspector.get_table_names()
+    deployment_columns = {column["name"] for column in inspector.get_columns("deployments")}
+    assert "traffic_split_json" in deployment_columns

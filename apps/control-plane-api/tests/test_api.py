@@ -154,12 +154,12 @@ def test_create_and_list_deployments_prompts_evaluations_and_approvals() -> None
     } <= audit_actions
 
 
-def create_demo_model(client: TestClient) -> str:
+def create_demo_model(client: TestClient, version: str = "0.1.0") -> str:
     dataset_response = client.post(
         "/datasets",
         json={
             "name": "synthetic-claims",
-            "version": "2026.06",
+            "version": f"2026.06-{version}",
             "owner": "platform-demo",
             "schema_uri": "azurite://schemas/claims.json",
             "storage_uri": "azurite://datasets/synthetic-claims",
@@ -171,9 +171,9 @@ def create_demo_model(client: TestClient) -> str:
         "/models",
         json={
             "name": "claims-risk",
-            "version": "0.1.0",
+            "version": version,
             "framework": "scikit-learn",
-            "artifact_uri": "azurite://models/claims-risk/0.1.0",
+            "artifact_uri": f"azurite://models/claims-risk/{version}",
             "training_dataset_id": dataset_id,
             "metrics_json": {"auc": 0.91},
             "lineage_json": {"run_id": "demo-run-001"},
@@ -322,6 +322,141 @@ def test_prompt_production_ready_filter_requires_approved_prompt_card() -> None:
 
     assert update_response.status_code == 200
     assert [prompt["id"] for prompt in ready_response.json()] == [prompt_id]
+
+
+def test_deployment_canary_traffic_split_and_rollback_metadata() -> None:
+    with make_client() as client:
+        champion_id = create_demo_model(client, version="1.0.0")
+        challenger_id = create_demo_model(client, version="1.1.0")
+        deployment_response = client.post(
+            "/deployments",
+            json={
+                "model_id": champion_id,
+                "environment": "prod",
+                "deployment_type": "blue-green",
+                "endpoint_url": "http://localhost:8001/predict/claims-risk",
+                "traffic_percent": 100,
+                "status": "active",
+            },
+        )
+        deployment = deployment_response.json()
+
+        canary_response = client.post(
+            f"/deployments/{deployment['id']}/canary",
+            json={
+                "challenger_model_id": challenger_id,
+                "challenger_percent": 15,
+                "actor": "release-manager",
+                "notes": "Synthetic canary rollout.",
+            },
+        )
+        invalid_traffic_response = client.post(
+            f"/deployments/{deployment['id']}/set-traffic",
+            json={
+                "traffic_split_json": {champion_id: 80, challenger_id: 10},
+                "actor": "release-manager",
+            },
+        )
+        traffic_response = client.post(
+            f"/deployments/{deployment['id']}/set-traffic",
+            json={
+                "traffic_split_json": {champion_id: 75, challenger_id: 25},
+                "actor": "release-manager",
+                "notes": "Expand synthetic challenger traffic.",
+            },
+        )
+        rollback_response = client.post(
+            f"/deployments/{deployment['id']}/rollback",
+            json={"actor": "release-manager", "notes": "Rollback after safety trigger."},
+        )
+        audit_response = client.get("/audit-events")
+
+    assert deployment_response.status_code == 201
+    assert deployment["champion_model_id"] == champion_id
+    assert deployment["rollback_model_id"] == champion_id
+    assert deployment["traffic_split_json"] == {champion_id: 100}
+
+    assert canary_response.status_code == 200
+    canary = canary_response.json()
+    assert canary["deployment_type"] == "canary"
+    assert canary["challenger_model_id"] == challenger_id
+    assert canary["traffic_split_json"] == {champion_id: 85, challenger_id: 15}
+    assert canary["health_status"] == "canary"
+
+    assert invalid_traffic_response.status_code == 422
+    assert traffic_response.status_code == 200
+    assert traffic_response.json()["traffic_split_json"] == {champion_id: 75, challenger_id: 25}
+
+    assert rollback_response.status_code == 200
+    rolled_back = rollback_response.json()
+    assert rolled_back["champion_model_id"] == champion_id
+    assert rolled_back["challenger_model_id"] is None
+    assert rolled_back["traffic_split_json"] == {champion_id: 100}
+    assert rolled_back["health_status"] == "rolled_back"
+
+    audit_actions = {event["action"] for event in audit_response.json()}
+    assert {
+        "deployment.canary_started",
+        "deployment.traffic_updated",
+        "deployment.rolled_back",
+    } <= audit_actions
+
+
+def test_deployment_health_marks_rollback_recommended_on_slo_breach() -> None:
+    with make_client() as client:
+        champion_id = create_demo_model(client, version="2.0.0")
+        deployment_response = client.post(
+            "/deployments",
+            json={
+                "model_id": champion_id,
+                "environment": "prod",
+                "deployment_type": "blue-green",
+                "endpoint_url": "http://localhost:8001/predict/claims-risk",
+                "traffic_percent": 100,
+                "status": "active",
+            },
+        )
+        assert deployment_response.status_code == 201
+
+        prediction_response = client.post(
+            "/monitoring/prediction-events",
+            json={
+                "model_name": "claims-risk",
+                "model_version": "2.0.0",
+                "request_features_json": {
+                    "age_bucket": "65+",
+                    "plan_type": "medicare_advantage",
+                    "prior_claim_count": 8,
+                    "recent_visit_count": 4,
+                    "medication_count": 6,
+                    "chronic_condition_count": 3,
+                    "region_code": "R03",
+                },
+                "prediction_score": 0.82,
+                "risk_band": "high",
+                "latency_ms": 20,
+                "correlation_id": "corr-deployment-prediction",
+            },
+        )
+        error_response = client.post(
+            "/monitoring/error-events",
+            json={
+                "model_name": "claims-risk",
+                "model_version": "2.0.0",
+                "error_type": "model_prediction_failed",
+                "error_message": "Model prediction failed; deterministic fallback score returned.",
+                "status_code": 200,
+                "latency_ms": 44,
+                "correlation_id": "corr-deployment-error",
+            },
+        )
+        deployments_response = client.get("/deployments")
+
+    assert prediction_response.status_code == 201
+    assert error_response.status_code == 201
+    assert deployments_response.status_code == 200
+    deployment = deployments_response.json()[0]
+    assert deployment["health_status"] == "rollback_recommended"
 
 
 def test_create_external_audit_event() -> None:

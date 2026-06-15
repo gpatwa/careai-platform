@@ -21,10 +21,15 @@ type ModelArtifact = {
 type Deployment = {
   id: string;
   model_id: string;
+  champion_model_id: string;
+  challenger_model_id?: string | null;
   environment: string;
   deployment_type: string;
   endpoint_url: string;
   traffic_percent: number;
+  traffic_split_json: Record<string, number>;
+  rollback_model_id?: string | null;
+  health_status: string;
   status: string;
   created_at: string;
 };
@@ -236,20 +241,33 @@ const mockData: PlatformData = {
     {
       id: "dep-prod-claims-risk",
       model_id: "model-claims-risk-000",
+      champion_model_id: "model-claims-risk-000",
+      challenger_model_id: "model-claims-risk-001",
       environment: "prod",
-      deployment_type: "blue-green",
+      deployment_type: "canary",
       endpoint_url: "http://localhost:8001/predict/claims-risk",
       traffic_percent: 100,
+      traffic_split_json: {
+        "model-claims-risk-000": 85,
+        "model-claims-risk-001": 15
+      },
+      rollback_model_id: "model-claims-risk-000",
+      health_status: "canary",
       status: "active",
       created_at: "2026-06-15T06:45:00Z"
     },
     {
       id: "dep-rag-local",
       model_id: "prompt-rag-001",
+      champion_model_id: "prompt-rag-001",
+      challenger_model_id: null,
       environment: "demo",
       deployment_type: "local-fallback",
       endpoint_url: "http://localhost:8002/rag/query",
       traffic_percent: 100,
+      traffic_split_json: { "prompt-rag-001": 100 },
+      rollback_model_id: "prompt-rag-001",
+      health_status: "healthy",
       status: "active",
       created_at: "2026-06-15T07:21:00Z"
     }
@@ -625,7 +643,7 @@ function OverviewPage({
           rows={deployments.map((deployment) => [
             deployment.environment,
             deployment.endpoint_url,
-            `${deployment.traffic_percent}%`,
+            formatTrafficSplit(deployment.traffic_split_json, deployment.traffic_percent),
             deployment.status
           ])}
         />
@@ -757,24 +775,47 @@ function DeploymentsPage({ deployments }: { deployments: Deployment[] }) {
     <section className="page-grid">
       <Panel title="Active Endpoints" wide>
         <DataTable
-          columns={["Environment", "Type", "Endpoint", "Traffic", "Status"]}
+          columns={["Environment", "Type", "Endpoint", "Traffic", "Health", "Status"]}
           rows={deployments.map((deployment) => [
             deployment.environment,
             deployment.deployment_type,
             deployment.endpoint_url,
-            `${deployment.traffic_percent}%`,
+            formatTrafficSplit(deployment.traffic_split_json, deployment.traffic_percent),
+            deployment.health_status,
             deployment.status
+          ])}
+        />
+      </Panel>
+      <Panel title="Champion / Challenger">
+        <DataTable
+          columns={["Deployment", "Champion", "Challenger", "Rollback"]}
+          rows={deployments.map((deployment) => [
+            deployment.id,
+            deployment.champion_model_id,
+            deployment.challenger_model_id ?? "none",
+            deployment.rollback_model_id ?? "none"
           ])}
         />
       </Panel>
       <Panel title="Rollback Controls">
         <div className="rollback-box">
-          <StatusPill tone="yellow">Placeholder</StatusPill>
-          <p>
-            Rollback will point traffic back to the last approved production model after
-            deployment health, SLO, or drift triggers fail.
-          </p>
-          <button className="secondary-action" type="button">Stage rollback plan</button>
+          {deployments.map((deployment) => (
+            <div className="rollback-item" key={deployment.id}>
+              <StatusPill tone={deploymentHealthTone(deployment.health_status)}>
+                {deployment.health_status}
+              </StatusPill>
+              <p>
+                {deployment.health_status === "rollback_recommended"
+                  ? "Safety triggers recommend routing all traffic back to the rollback model."
+                  : "Rollback is ready to restore traffic to the last approved champion model."}
+              </p>
+              <button className="secondary-action" type="button">
+                {deployment.health_status === "rollback_recommended"
+                  ? "Rollback recommended"
+                  : "Rollback ready"}
+              </button>
+            </div>
+          ))}
         </div>
       </Panel>
     </section>
@@ -1254,6 +1295,24 @@ function formatMetricValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "boolean") return value ? "yes" : "no";
   return JSON.stringify(value);
+}
+
+function formatTrafficSplit(split: Record<string, number>, fallbackPercent: number): string {
+  const entries = Object.entries(split);
+  if (!entries.length) return `${fallbackPercent}%`;
+  return entries.map(([modelId, percent]) => `${shortId(modelId)} ${percent}%`).join(" / ");
+}
+
+function shortId(value: string): string {
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 15)}...`;
+}
+
+function deploymentHealthTone(healthStatus: string): "green" | "yellow" | "red" | "blue" {
+  if (healthStatus === "healthy" || healthStatus === "rolled_back") return "green";
+  if (healthStatus === "rollback_recommended" || healthStatus === "degraded") return "red";
+  if (healthStatus === "canary") return "yellow";
+  return "blue";
 }
 
 function formatDate(value: string): string {

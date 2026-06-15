@@ -74,6 +74,52 @@ careai-drift-check \
 
 Drift compares baseline training distributions to recent serving distributions, with numeric utilization features binned before PSI calculations. Investigate `yellow`; treat `red` as a rollback or human-review trigger. Also review p95 latency, error rate, and high-risk-rate changes for signs of training-serving skew, data quality issues, or operational degradation. The summary endpoint marks SLO status as breached when p95 latency exceeds 750 ms or error rate exceeds 2%.
 
+## Deployment Safety
+
+Start a canary for an existing deployment:
+
+```bash
+curl -X POST http://localhost:8000/deployments/<deployment-id>/canary \
+  -H "content-type: application/json" \
+  -d '{
+    "challenger_model_id": "<challenger-model-id>",
+    "challenger_percent": 10,
+    "actor": "release-manager"
+  }' | jq
+```
+
+Increase or decrease traffic:
+
+```bash
+curl -X POST http://localhost:8000/deployments/<deployment-id>/set-traffic \
+  -H "content-type: application/json" \
+  -d '{
+    "traffic_split_json": {
+      "<champion-model-id>": 75,
+      "<challenger-model-id>": 25
+    },
+    "actor": "release-manager"
+  }' | jq
+```
+
+Rollback sends all traffic to `rollback_model_id` and clears challenger traffic:
+
+```bash
+curl -X POST http://localhost:8000/deployments/<deployment-id>/rollback \
+  -H "content-type: application/json" \
+  -d '{"actor":"release-manager","notes":"Rollback after SLO or drift trigger."}' | jq
+```
+
+For local inference traffic simulation, configure:
+
+```bash
+export CLAIMS_RISK_TRAFFIC_SPLIT_JSON='{"champion":90,"challenger":10}'
+export CLAIMS_RISK_CHAMPION_MODEL_VERSION=0.1.0
+export CLAIMS_RISK_CHALLENGER_MODEL_VERSION=0.2.0
+```
+
+Prediction responses include `selected_model_role` and selected `model_version`. The control plane marks deployments as `rollback_recommended` when champion error rate, latency, or drift crosses the demo thresholds.
+
 ## RAG Ingestion
 
 Run local synthetic document ingestion:

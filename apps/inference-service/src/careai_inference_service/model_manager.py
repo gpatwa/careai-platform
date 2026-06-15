@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +28,15 @@ class InferenceSettings:
     control_plane_url: str | None
     audit_enabled: bool
     monitoring_enabled: bool = True
+    traffic_split_json: dict[str, int] | None = None
+    champion_model_name: str | None = None
+    champion_model_version: str | None = None
+    challenger_model_name: str | None = None
+    challenger_model_version: str | None = None
 
     @classmethod
     def from_env(cls) -> "InferenceSettings":
+        traffic_split_json = parse_traffic_split(os.getenv("CLAIMS_RISK_TRAFFIC_SPLIT_JSON"))
         return cls(
             model_uri=os.getenv("CLAIMS_RISK_MODEL_URI") or os.getenv("CLAIMS_RISK_MODEL_PATH"),
             model_metadata_path=os.getenv("CLAIMS_RISK_MODEL_METADATA_PATH"),
@@ -38,6 +45,11 @@ class InferenceSettings:
             control_plane_url=os.getenv("CONTROL_PLANE_API_URL"),
             audit_enabled=os.getenv("INFERENCE_AUDIT_ENABLED", "true").lower() == "true",
             monitoring_enabled=os.getenv("INFERENCE_MONITORING_ENABLED", "true").lower() == "true",
+            traffic_split_json=traffic_split_json,
+            champion_model_name=os.getenv("CLAIMS_RISK_CHAMPION_MODEL_NAME"),
+            champion_model_version=os.getenv("CLAIMS_RISK_CHAMPION_MODEL_VERSION"),
+            challenger_model_name=os.getenv("CLAIMS_RISK_CHALLENGER_MODEL_NAME"),
+            challenger_model_version=os.getenv("CLAIMS_RISK_CHALLENGER_MODEL_VERSION"),
         )
 
 
@@ -46,6 +58,14 @@ class LoadedModel:
     model: Any
     source: str
     metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ModelSelection:
+    role: str
+    model_name: str
+    model_version: str
+    traffic_split_json: dict[str, int]
 
 
 class ModelManager:
@@ -102,6 +122,28 @@ class ModelManager:
             fallback_mode=self.loaded_model is None,
             feature_version=self.settings.feature_version,
             warning=self.load_error,
+            traffic_split_json=self.settings.traffic_split_json or {},
+        )
+
+    def select_model(self, routing_key: str) -> ModelSelection:
+        active_model = self.active_model()
+        split = normalized_traffic_split(self.settings.traffic_split_json)
+        role = select_traffic_role(split, routing_key)
+        if role == "challenger":
+            return ModelSelection(
+                role=role,
+                model_name=self.settings.challenger_model_name or active_model.model_name,
+                model_version=(
+                    self.settings.challenger_model_version
+                    or f"{active_model.model_version}-challenger"
+                ),
+                traffic_split_json=split,
+            )
+        return ModelSelection(
+            role="champion",
+            model_name=self.settings.champion_model_name or active_model.model_name,
+            model_version=self.settings.champion_model_version or active_model.model_version,
+            traffic_split_json=split,
         )
 
     def _load_model(self, model_uri: str) -> Any:
@@ -116,3 +158,53 @@ class ModelManager:
             if metadata_path.exists():
                 return json.loads(metadata_path.read_text())
         return {"name": "claims-risk", "version": "unknown"}
+
+
+def parse_traffic_split(raw_value: str | None) -> dict[str, int] | None:
+    if not raw_value:
+        return None
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        logger.warning("invalid CLAIMS_RISK_TRAFFIC_SPLIT_JSON; using champion-only routing")
+        return None
+    if not isinstance(parsed, dict):
+        logger.warning("CLAIMS_RISK_TRAFFIC_SPLIT_JSON must be a JSON object")
+        return None
+    normalized: dict[str, int] = {}
+    for key, value in parsed.items():
+        if key not in {"champion", "challenger"}:
+            continue
+        try:
+            percent = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= percent <= 100:
+            normalized[key] = percent
+    if sum(normalized.values()) != 100:
+        logger.warning("CLAIMS_RISK_TRAFFIC_SPLIT_JSON percentages must sum to 100")
+        return None
+    return normalized
+
+
+def normalized_traffic_split(split: dict[str, int] | None) -> dict[str, int]:
+    if not split:
+        return {"champion": 100}
+    normalized = {
+        role: percent
+        for role, percent in split.items()
+        if role in {"champion", "challenger"} and 0 <= percent <= 100
+    }
+    if sum(normalized.values()) != 100:
+        return {"champion": 100}
+    return normalized
+
+
+def select_traffic_role(split: dict[str, int], routing_key: str) -> str:
+    bucket = int(sha256(routing_key.encode("utf-8")).hexdigest(), 16) % 100
+    cumulative = 0
+    for role in ("champion", "challenger"):
+        cumulative += split.get(role, 0)
+        if bucket < cumulative:
+            return role
+    return "champion"

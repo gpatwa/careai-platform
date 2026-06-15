@@ -94,14 +94,30 @@ def upgrade() -> None:
         "deployments",
         standard_id(),
         sa.Column("model_id", sa.String(length=36), nullable=False),
+        sa.Column("champion_model_id", sa.String(length=36), nullable=False),
+        sa.Column("challenger_model_id", sa.String(length=36), nullable=True),
         sa.Column("environment", sa.String(length=80), nullable=False),
         sa.Column("deployment_type", sa.String(length=80), nullable=False),
         sa.Column("endpoint_url", sa.String(length=512), nullable=False),
         sa.Column("traffic_percent", sa.Integer(), nullable=False),
+        sa.Column("traffic_split_json", sa.JSON(), nullable=False),
+        sa.Column("rollback_model_id", sa.String(length=36), nullable=True),
+        sa.Column("health_status", sa.String(length=80), nullable=False),
         sa.Column("status", sa.String(length=80), nullable=False),
         created_at(),
     )
-    create_indexes("deployments", ["model_id", "environment", "status"])
+    create_indexes(
+        "deployments",
+        [
+            "model_id",
+            "champion_model_id",
+            "challenger_model_id",
+            "rollback_model_id",
+            "environment",
+            "health_status",
+            "status",
+        ],
+    )
 
     create_table_if_missing(
         "prompt_templates",

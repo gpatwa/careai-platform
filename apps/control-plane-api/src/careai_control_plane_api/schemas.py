@@ -92,10 +92,30 @@ class PromoteModelRequest(BaseModel):
 
 class DeploymentCreate(BaseModel):
     model_id: str = Field(..., description="Model artifact to deploy.")
+    champion_model_id: str | None = Field(
+        default=None,
+        description="Current champion model artifact. Defaults to model_id for compatibility.",
+    )
+    challenger_model_id: str | None = Field(
+        default=None,
+        description="Optional challenger model artifact for canary or champion/challenger tests.",
+    )
     environment: str = Field(..., description="Target environment such as dev or prod.")
     deployment_type: str = Field(..., description="Deployment strategy such as canary.")
     endpoint_url: str = Field(..., description="Serving endpoint URL.")
     traffic_percent: int = Field(default=0, ge=0, le=100)
+    traffic_split_json: dict[str, int] = Field(
+        default_factory=dict,
+        description="Percent traffic by champion/challenger model id.",
+    )
+    rollback_model_id: str | None = Field(
+        default=None,
+        description="Model artifact to restore during rollback.",
+    )
+    health_status: str = Field(
+        default="unknown",
+        description="Deployment health such as healthy, canary, or rollback_recommended.",
+    )
     status: str = Field(default="pending", description="Deployment status.")
 
 
@@ -104,6 +124,27 @@ class DeploymentRead(DeploymentCreate):
 
     id: str
     created_at: datetime
+
+
+class CanaryDeploymentRequest(BaseModel):
+    challenger_model_id: str = Field(..., description="Model artifact receiving canary traffic.")
+    challenger_percent: int = Field(default=10, ge=1, le=99)
+    actor: str | None = Field(default=None)
+    notes: str = Field(default="")
+
+
+class SetTrafficRequest(BaseModel):
+    traffic_split_json: dict[str, int] = Field(
+        ...,
+        description="Traffic percentages keyed by model artifact id.",
+    )
+    actor: str | None = Field(default=None)
+    notes: str = Field(default="")
+
+
+class RollbackDeploymentRequest(BaseModel):
+    actor: str | None = Field(default=None)
+    notes: str = Field(default="")
 
 
 class PromptTemplateCreate(BaseModel):

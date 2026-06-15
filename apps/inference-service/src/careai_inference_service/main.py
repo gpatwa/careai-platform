@@ -158,6 +158,9 @@ def register_routes(application: FastAPI) -> None:
         started_at = perf_counter()
         model_manager: ModelManager = application.state.model_manager
         active_model = model_manager.active_model()
+        correlation_id = ensure_correlation_id()
+        target_id = payload.request_id or str(uuid4())
+        selected_model = model_manager.select_model(target_id or correlation_id)
         warnings = feature_warnings(
             payload.features,
             application.state.inference_settings.max_feature_age_minutes,
@@ -179,8 +182,6 @@ def register_routes(application: FastAPI) -> None:
                 warnings.append("model_unavailable_rules_fallback_used")
 
         band = risk_band(score)
-        correlation_id = ensure_correlation_id()
-        target_id = payload.request_id or str(uuid4())
         latency_ms = max(int((perf_counter() - started_at) * 1000), 0)
 
         logger.info(
@@ -188,16 +189,17 @@ def register_routes(application: FastAPI) -> None:
             extra={
                 "target_id": target_id,
                 "risk_band": band,
-                "model_name": active_model.model_name,
-                "model_version": active_model.model_version,
+                "model_name": selected_model.model_name,
+                "model_version": selected_model.model_version,
+                "selected_model_role": selected_model.role,
                 "fallback_mode": fallback_mode,
                 "warning_count": len(warnings),
                 "latency_ms": latency_ms,
             },
         )
         application.state.observability.record_prediction(
-            model_name=active_model.model_name,
-            model_version=active_model.model_version,
+            model_name=selected_model.model_name,
+            model_version=selected_model.model_version,
             fallback_mode=fallback_mode,
             risk_band=band,
         )
@@ -209,16 +211,18 @@ def register_routes(application: FastAPI) -> None:
             correlation_id=correlation_id,
             metadata={
                 "risk_band": band,
-                "model_name": active_model.model_name,
-                "model_version": active_model.model_version,
+                "model_name": selected_model.model_name,
+                "model_version": selected_model.model_version,
+                "selected_model_role": selected_model.role,
+                "traffic_split_json": selected_model.traffic_split_json,
                 "feature_version": active_model.feature_version,
                 "fallback_mode": fallback_mode,
                 "warnings": warnings,
             },
         )
         application.state.audit_client.send_monitoring_prediction_event(
-            model_name=active_model.model_name,
-            model_version=active_model.model_version,
+            model_name=selected_model.model_name,
+            model_version=selected_model.model_version,
             request_features=payload.features.feature_frame_record(),
             prediction_score=score,
             risk_band=band,
@@ -230,11 +234,13 @@ def register_routes(application: FastAPI) -> None:
             build_event(
                 event_type="prediction.created",
                 source=settings.service_name,
-                subject=f"model/{active_model.model_name}",
+                subject=f"model/{selected_model.model_name}",
                 correlation_id=correlation_id,
                 payload={
-                    "model_name": active_model.model_name,
-                    "model_version": active_model.model_version,
+                    "model_name": selected_model.model_name,
+                    "model_version": selected_model.model_version,
+                    "selected_model_role": selected_model.role,
+                    "traffic_split_json": selected_model.traffic_split_json,
                     "feature_version": active_model.feature_version,
                     "request_features_json": payload.features.feature_frame_record(),
                     "prediction_score": score,
@@ -246,8 +252,8 @@ def register_routes(application: FastAPI) -> None:
         )
         if prediction_error_type:
             application.state.audit_client.send_monitoring_error_event(
-                model_name=active_model.model_name,
-                model_version=active_model.model_version,
+                model_name=selected_model.model_name,
+                model_version=selected_model.model_version,
                 error_type="model_prediction_failed",
                 error_message="Model prediction failed; deterministic fallback score returned.",
                 status_code=200,
@@ -258,8 +264,10 @@ def register_routes(application: FastAPI) -> None:
         return ClaimsRiskPredictionResponse(
             prediction_score=score,
             risk_band=band,
-            model_name=active_model.model_name,
-            model_version=active_model.model_version,
+            model_name=selected_model.model_name,
+            model_version=selected_model.model_version,
+            selected_model_role=selected_model.role,
+            traffic_split_json=selected_model.traffic_split_json,
             feature_version=active_model.feature_version,
             decision_reason_codes=reason_codes(payload.features, score),
             correlation_id=correlation_id,

@@ -71,6 +71,46 @@ def test_prediction_uses_loaded_model(tmp_path) -> None:
     assert "HIGH_SCORE_THRESHOLD" in body["decision_reason_codes"]
 
 
+def test_prediction_traffic_split_selects_champion_and_challenger(tmp_path) -> None:
+    model_path = tmp_path / "claims-risk.joblib"
+    metadata_path = tmp_path / "model-metadata.json"
+    joblib.dump(FixedProbabilityModel(), model_path)
+    metadata_path.write_text(json.dumps({"name": "claims-risk", "version": "champion-v1"}))
+
+    app = create_app(
+        InferenceSettings(
+            model_uri=str(model_path),
+            model_metadata_path=str(metadata_path),
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url=None,
+            audit_enabled=False,
+            traffic_split_json={"champion": 50, "challenger": 50},
+            champion_model_version="champion-v1",
+            challenger_model_version="challenger-v2",
+        )
+    )
+
+    champion_payload = valid_payload()
+    champion_payload["request_id"] = "synthetic-request-001"
+    challenger_payload = valid_payload()
+    challenger_payload["request_id"] = "synthetic-request-000"
+
+    with TestClient(app) as client:
+        champion_response = client.post("/predict/claims-risk", json=champion_payload)
+        challenger_response = client.post("/predict/claims-risk", json=challenger_payload)
+
+    assert champion_response.status_code == 200
+    assert challenger_response.status_code == 200
+    champion = champion_response.json()
+    challenger = challenger_response.json()
+    assert champion["selected_model_role"] == "champion"
+    assert champion["model_version"] == "champion-v1"
+    assert challenger["selected_model_role"] == "challenger"
+    assert challenger["model_version"] == "challenger-v2"
+    assert challenger["traffic_split_json"] == {"champion": 50, "challenger": 50}
+
+
 def test_validation_failure_for_missing_required_feature() -> None:
     app = create_app(load_model=False)
     payload = valid_payload()

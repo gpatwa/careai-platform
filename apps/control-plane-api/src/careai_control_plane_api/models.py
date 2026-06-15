@@ -72,10 +72,15 @@ class DeploymentORM(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     model_id: Mapped[str] = mapped_column(String(36), index=True)
+    champion_model_id: Mapped[str] = mapped_column(String(36), index=True)
+    challenger_model_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     environment: Mapped[str] = mapped_column(String(80), index=True)
     deployment_type: Mapped[str] = mapped_column(String(80))
     endpoint_url: Mapped[str] = mapped_column(String(512))
     traffic_percent: Mapped[int] = mapped_column(Integer, default=0)
+    traffic_split_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    rollback_model_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    health_status: Mapped[str] = mapped_column(String(80), default="unknown", index=True)
     status: Mapped[str] = mapped_column(String(80), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

@@ -6,7 +6,7 @@ Show the local web console and explain the platform boundaries: control plane, i
 
 ## 2. MLOps Walkthrough
 
-Describe how synthetic healthcare-like claims data flows from deterministic generation into training, experiment tracking, model registry metadata, promotion, deployment, inference, monitoring, and rollback.
+Describe how synthetic healthcare-like claims data flows from deterministic generation into training, experiment tracking, model registry metadata, promotion, deployment, inference, monitoring, and rollback. Show a champion model, introduce a challenger through canary traffic, adjust traffic split, then roll back when health becomes `rollback_recommended`.
 
 ## 3. LLMOps Walkthrough
 

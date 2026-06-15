@@ -35,6 +35,7 @@ from careai_control_plane_api.schemas import (
     ApprovalRead,
     AuditEventCreate,
     AuditEventRead,
+    CanaryDeploymentRequest,
     DatasetAssetCreate,
     DatasetAssetRead,
     DeploymentCreate,
@@ -59,6 +60,8 @@ from careai_control_plane_api.schemas import (
     PromptCardUpdate,
     PromptTemplateCreate,
     PromptTemplateRead,
+    RollbackDeploymentRequest,
+    SetTrafficRequest,
 )
 
 OrmModel = TypeVar("OrmModel")
@@ -192,6 +195,82 @@ def is_model_production_ready(session: Session, model_id: str) -> tuple[bool, li
 def is_prompt_production_ready(session: Session, prompt: PromptTemplateORM) -> bool:
     card = prompt_card_for(session, prompt.id)
     return prompt.status == "approved" and card is not None and card.approval_status == "approved"
+
+
+def validate_traffic_split(split: dict[str, int]) -> dict[str, int]:
+    if not split:
+        raise HTTPException(
+            status_code=422,
+            detail="traffic_split_json must include at least one model id",
+        )
+    normalized: dict[str, int] = {}
+    for model_id, percent in split.items():
+        if not model_id:
+            raise HTTPException(
+                status_code=422,
+                detail="traffic_split_json model ids must be non-empty",
+            )
+        if percent < 0 or percent > 100:
+            raise HTTPException(
+                status_code=422,
+                detail="traffic percentages must be between 0 and 100",
+            )
+        normalized[model_id] = int(percent)
+
+    if sum(normalized.values()) != 100:
+        raise HTTPException(
+            status_code=422,
+            detail="traffic_split_json percentages must sum to 100",
+        )
+    return normalized
+
+
+def deployment_or_404(session: Session, deployment_id: str) -> DeploymentORM:
+    deployment = session.get(DeploymentORM, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+    return deployment
+
+
+def rollback_recommended_for(session: Session, deployment: DeploymentORM) -> bool:
+    model = session.get(ModelArtifactORM, deployment.champion_model_id)
+    if model is None:
+        return False
+
+    events = list(session.scalars(monitoring_events_query(model.name, model.version)))
+    error_events = list(session.scalars(monitoring_error_events_query(model.name, model.version)))
+    observed_count = len(events) + len(error_events)
+    error_rate = round(len(error_events) / observed_count, 6) if observed_count else 0.0
+    p95_latency_ms = percentile(
+        [event.latency_ms for event in events] + [event.latency_ms for event in error_events],
+        0.95,
+    )
+    current_slo_status = slo_status(
+        event_count=observed_count,
+        error_rate=error_rate,
+        p95_latency_ms=p95_latency_ms,
+        error_rate_slo=DEFAULT_ERROR_RATE_SLO,
+        latency_slo_ms=DEFAULT_LATENCY_SLO_MS,
+    )
+    latest_drift = session.scalars(
+        select(DriftSnapshotORM)
+        .where(
+            DriftSnapshotORM.model_name == model.name,
+            DriftSnapshotORM.model_version == model.version,
+        )
+        .order_by(DriftSnapshotORM.created_at.desc(), DriftSnapshotORM.id.desc())
+        .limit(1)
+    ).first()
+    return current_slo_status == "breached" or (
+        latest_drift is not None and latest_drift.drift_status == "red"
+    )
+
+
+def refresh_deployment_health(session: Session, deployment: DeploymentORM) -> None:
+    if deployment.status in {"rolled_back", "inactive"}:
+        return
+    if rollback_recommended_for(session, deployment):
+        deployment.health_status = "rollback_recommended"
 
 
 def monitoring_events_query(model_name: str, model_version: str | None = None):
@@ -518,7 +597,13 @@ def create_deployment(
     request: Request,
     session: SessionDep,
 ) -> DeploymentORM:
-    deployment = DeploymentORM(**payload.model_dump())
+    payload_data = payload.model_dump()
+    champion_model_id = payload.champion_model_id or payload.model_id
+    payload_data["champion_model_id"] = champion_model_id
+    payload_data["rollback_model_id"] = payload.rollback_model_id or champion_model_id
+    if not payload.traffic_split_json:
+        payload_data["traffic_split_json"] = {champion_model_id: payload.traffic_percent}
+    deployment = DeploymentORM(**payload_data)
     session.add(deployment)
     session.flush()
     write_audit_event(
@@ -542,7 +627,145 @@ def create_deployment(
     description="Lists tracked deployment records.",
 )
 def get_deployments(session: SessionDep) -> list[DeploymentORM]:
-    return list_records(session, DeploymentORM)
+    deployments = list_records(session, DeploymentORM)
+    for deployment in deployments:
+        refresh_deployment_health(session, deployment)
+    session.commit()
+    return deployments
+
+
+@router.post(
+    "/deployments/{deployment_id}/canary",
+    response_model=DeploymentRead,
+    tags=["Deployments"],
+    summary="Start a canary deployment",
+    description="Adds a challenger model and sends a controlled percentage of traffic to it.",
+)
+def start_canary(
+    deployment_id: str,
+    payload: CanaryDeploymentRequest,
+    request: Request,
+    session: SessionDep,
+) -> DeploymentORM:
+    deployment = deployment_or_404(session, deployment_id)
+    split = validate_traffic_split(
+        {
+            deployment.champion_model_id: 100 - payload.challenger_percent,
+            payload.challenger_model_id: payload.challenger_percent,
+        }
+    )
+    deployment.challenger_model_id = payload.challenger_model_id
+    deployment.traffic_split_json = split
+    deployment.traffic_percent = 100
+    deployment.deployment_type = "canary"
+    deployment.status = "active"
+    deployment.health_status = "canary"
+    if deployment.rollback_model_id is None:
+        deployment.rollback_model_id = deployment.champion_model_id
+    write_audit_event(
+        session,
+        actor=actor_from_request(request, payload.actor),
+        action="deployment.canary_started",
+        target_type="deployment",
+        target_id=deployment.id,
+        metadata={
+            "champion_model_id": deployment.champion_model_id,
+            "challenger_model_id": deployment.challenger_model_id,
+            "traffic_split_json": split,
+            "notes": payload.notes,
+        },
+    )
+    session.commit()
+    session.refresh(deployment)
+    return deployment
+
+
+@router.post(
+    "/deployments/{deployment_id}/set-traffic",
+    response_model=DeploymentRead,
+    tags=["Deployments"],
+    summary="Set deployment traffic split",
+    description="Updates champion/challenger traffic percentages for a deployment.",
+)
+def set_deployment_traffic(
+    deployment_id: str,
+    payload: SetTrafficRequest,
+    request: Request,
+    session: SessionDep,
+) -> DeploymentORM:
+    deployment = deployment_or_404(session, deployment_id)
+    split = validate_traffic_split(payload.traffic_split_json)
+    allowed_ids = {deployment.champion_model_id}
+    if deployment.challenger_model_id:
+        allowed_ids.add(deployment.challenger_model_id)
+    if deployment.rollback_model_id:
+        allowed_ids.add(deployment.rollback_model_id)
+    unknown_ids = sorted(set(split) - allowed_ids)
+    if unknown_ids:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Traffic split includes unknown deployment model ids",
+                "ids": unknown_ids,
+            },
+        )
+
+    deployment.traffic_split_json = split
+    deployment.traffic_percent = 100
+    deployment.health_status = "healthy" if not deployment.challenger_model_id else "canary"
+    refresh_deployment_health(session, deployment)
+    write_audit_event(
+        session,
+        actor=actor_from_request(request, payload.actor),
+        action="deployment.traffic_updated",
+        target_type="deployment",
+        target_id=deployment.id,
+        metadata={"traffic_split_json": split, "notes": payload.notes},
+    )
+    session.commit()
+    session.refresh(deployment)
+    return deployment
+
+
+@router.post(
+    "/deployments/{deployment_id}/rollback",
+    response_model=DeploymentRead,
+    tags=["Deployments"],
+    summary="Rollback a deployment",
+    description="Routes all traffic to the rollback model and clears challenger traffic.",
+)
+def rollback_deployment(
+    deployment_id: str,
+    payload: RollbackDeploymentRequest,
+    request: Request,
+    session: SessionDep,
+) -> DeploymentORM:
+    deployment = deployment_or_404(session, deployment_id)
+    rollback_model_id = deployment.rollback_model_id or deployment.champion_model_id
+    previous_champion_id = deployment.champion_model_id
+    deployment.model_id = rollback_model_id
+    deployment.champion_model_id = rollback_model_id
+    deployment.challenger_model_id = None
+    deployment.traffic_split_json = {rollback_model_id: 100}
+    deployment.traffic_percent = 100
+    deployment.status = "active"
+    deployment.deployment_type = "rollback"
+    deployment.health_status = "rolled_back"
+    write_audit_event(
+        session,
+        actor=actor_from_request(request, payload.actor),
+        action="deployment.rolled_back",
+        target_type="deployment",
+        target_id=deployment.id,
+        metadata={
+            "previous_champion_model_id": previous_champion_id,
+            "rollback_model_id": rollback_model_id,
+            "notes": payload.notes,
+        },
+    )
+    session.commit()
+    session.refresh(deployment)
+    return deployment
 
 
 @router.post(
@@ -1039,7 +1262,7 @@ def run_drift_check(
 ) -> DriftCheckResponse:
     if payload.red_threshold < payload.yellow_threshold:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="red_threshold must be greater than or equal to yellow_threshold",
         )
 
