@@ -37,6 +37,7 @@ env:
   AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
   AZURE_EVENTHUB_NAME: ${{ vars.AZURE_EVENTHUB_NAME }}
   AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${{ vars.AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE }}
+  AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   REDIS_URL: ${{ secrets.REDIS_URL }}
   AZURE_AI_SEARCH_API_KEY: ${{ secrets.AZURE_AI_SEARCH_API_KEY }}
@@ -57,22 +58,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : "${AZURE_CLIENT_ID:?Set GitHub variable AZURE_CLIENT_ID for OIDC login.}"
-          : "${AZURE_TENANT_ID:?Set GitHub variable AZURE_TENANT_ID for OIDC login.}"
-          : "${AZURE_SUBSCRIPTION_ID:?Set GitHub variable AZURE_SUBSCRIPTION_ID for OIDC login.}"
           : "${AZURE_RESOURCE_GROUP:?Set GitHub variable AZURE_RESOURCE_GROUP from Terraform output resource_group_name.}"
           : "${ACR_LOGIN_SERVER:?Set GitHub variable ACR_LOGIN_SERVER from Terraform output acr_login_server.}"
           : "${CONTROL_PLANE_APP_NAME:?Set GitHub variable CONTROL_PLANE_APP_NAME.}"
           : "${INFERENCE_APP_NAME:?Set GitHub variable INFERENCE_APP_NAME.}"
           : "${RAG_APP_NAME:?Set GitHub variable RAG_APP_NAME.}"
           : "${WEB_CONSOLE_APP_NAME:?Set GitHub variable WEB_CONSOLE_APP_NAME.}"
+          if [ -z "${AZURE_CLIENT_ID:-}" ] || [ -z "${AZURE_TENANT_ID:-}" ] || [ -z "${AZURE_SUBSCRIPTION_ID:-}" ]; then
+            : "${AZURE_CREDENTIALS:?Set GitHub secret AZURE_CREDENTIALS for service-principal fallback, or provide AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID for OIDC.}"
+          fi
 
       - name: Azure login with OpenID Connect
+        if: ${{ env.AZURE_CLIENT_ID != '' && env.AZURE_TENANT_ID != '' && env.AZURE_SUBSCRIPTION_ID != '' }}
         uses: azure/login@v2
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure login with service principal fallback
+        if: ${{ (env.AZURE_CLIENT_ID == '' || env.AZURE_TENANT_ID == '' || env.AZURE_SUBSCRIPTION_ID == '') && env.AZURE_CREDENTIALS != '' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ env.AZURE_CREDENTIALS }}
 
       - name: Ensure Azure Container Apps CLI support
         shell: bash

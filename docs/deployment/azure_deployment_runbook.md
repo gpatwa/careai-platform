@@ -112,6 +112,8 @@ Create repository secrets only when the integration is enabled:
 | `AZURE_EVENTHUB_CONNECTION_STRING` | Optional fallback if not using managed identity. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Optional telemetry export. |
 
+If your GitHub environment cannot use OIDC, set a single `AZURE_CREDENTIALS` secret containing a service principal JSON payload. The workflow will use that as a fallback login path when the OIDC variables are absent.
+
 Run `.github/workflows/deploy-azure-container-apps.yml` from GitHub Actions. The workflow builds images, pushes them to ACR, updates Container Apps, injects secrets/references, resolves API URLs for the web build, and runs smoke tests.
 
 ## 5. Smoke Test
@@ -127,6 +129,7 @@ scripts/demo_azure_smoke_test.sh
 ## Known Deployment Choices
 
 - `enable_postgres = false` keeps cost lower but makes control-plane state ephemeral unless a `DATABASE_URL` secret is supplied.
+- `container_apps_location` defaults to `westus2` so the Container Apps environment can live separately from the shared foundation resources if one region has capacity pressure.
 - Terraform provisions Azure AI Search, but Azure-backed RAG requires Search API key plus Azure OpenAI embedding configuration until managed identity Search data-plane auth is implemented.
 - Event Hubs namespace/name are passed to Terraform-created apps when enabled. A connection string can be supplied as a workflow secret for environments that are not using managed identity.
 - The web console is static. Rebuild it whenever API base URLs change.

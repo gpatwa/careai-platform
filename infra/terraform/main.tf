@@ -83,7 +83,7 @@ resource "azurerm_role_assignment" "acr_pull" {
 
 resource "azurerm_container_app_environment" "this" {
   name                       = "${local.short_prefix}-cae-${random_string.suffix.result}"
-  location                   = azurerm_resource_group.this.location
+  location                   = var.container_apps_location
   resource_group_name        = azurerm_resource_group.this.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = local.common_tags
@@ -115,7 +115,7 @@ resource "azurerm_storage_account" "this" {
   account_replication_type        = "LRS"
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
-  shared_access_key_enabled       = false
+  shared_access_key_enabled       = true
   tags                            = local.common_tags
 }
 

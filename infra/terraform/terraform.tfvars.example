@@ -1,5 +1,6 @@
 environment     = "dev"
 location        = "eastus"
+container_apps_location = "westus2"
 resource_prefix = "careai"
 
 tags = {

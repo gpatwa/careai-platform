@@ -10,9 +10,15 @@ variable "environment" {
 }
 
 variable "location" {
-  description = "Azure region for all resources."
+  description = "Azure region for persistent and shared foundation resources."
   type        = string
   default     = "eastus"
+}
+
+variable "container_apps_location" {
+  description = "Azure region for the Container Apps environment."
+  type        = string
+  default     = "westus2"
 }
 
 variable "resource_prefix" {

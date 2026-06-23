@@ -48,7 +48,8 @@ Key variables:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `environment` | Short environment name used in resource names. | `dev` |
-| `location` | Azure region. | `eastus` |
+| `location` | Azure region for shared foundation resources. | `eastus` |
+| `container_apps_location` | Azure region for the Container Apps environment. | `westus2` |
 | `resource_prefix` | Short lowercase prefix for resources. | `careai` |
 | `tags` | Map of governance and ownership tags. | synthetic-only demo tags |
 | `container_image_tags` | A tag per service image in ACR. | `latest` |
@@ -141,7 +142,7 @@ Terraform outputs:
 
 After Terraform has created the Azure resources, use `.github/workflows/deploy-azure-container-apps.yml` to build images, push to ACR, update Container Apps, and run smoke tests.
 
-The workflow is configured for GitHub OpenID Connect. Create an Entra ID app registration or managed identity with federated credentials for this repository, then grant it permissions to push images and update Container Apps. Minimum practical roles for the demo resource group:
+The workflow is configured for GitHub OpenID Connect, with a documented `AZURE_CREDENTIALS` service-principal fallback if OIDC is unavailable. Create an Entra ID app registration or managed identity with federated credentials for this repository, then grant it permissions to push images and update Container Apps. Minimum practical roles for the demo resource group:
 
 - `Contributor` on the resource group.
 - `AcrPush` on the Azure Container Registry.
@@ -199,7 +200,9 @@ Azure AI Search and Azure OpenAI are intentionally configuration-gated. Terrafor
 
 For durable Azure control-plane metadata, set `enable_postgres = true` or provide a `DATABASE_URL` secret that points at a managed PostgreSQL instance. Without that configuration, the control plane can still run for a smoke demo, but container-local SQLite state should be treated as ephemeral.
 
-If OpenID Connect is not available in your organization, create a service principal scoped to the demo resource group, store its JSON credentials in a GitHub secret such as `AZURE_CREDENTIALS`, and replace the `azure/login` step with `creds: ${{ secrets.AZURE_CREDENTIALS }}`. OIDC is preferred because it avoids long-lived cloud credentials in GitHub.
+If OpenID Connect is not available in your organization, create a service principal scoped to the demo resource group and store its JSON credentials in the `AZURE_CREDENTIALS` GitHub secret. The deployment workflow will use that secret automatically when the OIDC variables are not set. OIDC is still preferred because it avoids long-lived cloud credentials in GitHub.
+
+The default split keeps shared foundation resources in `eastus` and the Container Apps environment in `westus2` so the demo can usually avoid the regional capacity issue that showed up during deployment. If your subscription still hits a regional capacity or offer restriction, rerun Terraform with another Container Apps region such as `centralus` or `westus3`.
 
 The workflow is manual-only by default to avoid accidental Azure spend. To deploy on every push to `main`, add a `push` trigger after the environment is stable.
 
@@ -208,5 +211,5 @@ The workflow is manual-only by default to avoid accidental Azure spend. To deplo
 - No real secrets are committed.
 - A user-assigned managed identity pulls images from ACR and receives scoped RBAC for Storage, Key Vault, Azure AI Search, and Event Hubs.
 - ACR admin access is disabled.
-- Storage containers are private and shared account keys are disabled.
+- Storage containers are private and shared account keys are enabled only so Terraform can provision and wait on the data plane reliably; runtime access should still use managed identity.
 - Optional PostgreSQL currently uses public Azure service access for a low-friction demo. For production, use private networking, managed identities or Entra authentication where supported, state encryption, and a remote backend with strict RBAC.
