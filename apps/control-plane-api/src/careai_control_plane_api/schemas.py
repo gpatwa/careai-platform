@@ -8,9 +8,26 @@ RiskBand = Literal["low", "medium", "high"]
 DriftStatus = Literal["green", "yellow", "red"]
 SloStatus = Literal["healthy", "breached", "unknown"]
 CardApprovalStatus = Literal["draft", "in_review", "approved", "rejected"]
+WorkflowStatus = Literal["pending", "running", "waiting_for_review", "completed", "failed"]
+ReviewQueueStatus = Literal["pending", "assigned", "completed", "dismissed"]
+PaymentIntegrityCaseStatus = Literal[
+    "intake",
+    "scoring",
+    "policy_review",
+    "pending_human_review",
+    "decision_ready",
+    "closed",
+]
 
 
-class DatasetAssetCreate(BaseModel):
+class TenantScopedCreate(BaseModel):
+    tenant_id: str | None = Field(
+        default=None,
+        description="Optional tenant identifier for customer-environment isolation.",
+    )
+
+
+class DatasetAssetCreate(TenantScopedCreate):
     name: str = Field(..., description="Dataset display name.")
     version: str = Field(..., description="Dataset semantic or build version.")
     owner: str = Field(..., description="Responsible owner or team.")
@@ -29,7 +46,7 @@ class DatasetAssetRead(DatasetAssetCreate):
     created_at: datetime
 
 
-class ModelArtifactCreate(BaseModel):
+class ModelArtifactCreate(TenantScopedCreate):
     name: str = Field(..., description="Model display name.")
     version: str = Field(..., description="Model artifact version.")
     framework: str = Field(..., description="Training or serving framework.")
@@ -47,7 +64,7 @@ class ModelArtifactRead(ModelArtifactCreate):
     created_at: datetime
 
 
-class ModelCardCreate(BaseModel):
+class ModelCardCreate(TenantScopedCreate):
     model_config = ConfigDict(extra="forbid")
 
     model_id: str = Field(..., description="Model artifact identifier covered by this card.")
@@ -90,7 +107,7 @@ class PromoteModelRequest(BaseModel):
     notes: str = Field(default="", description="Promotion rationale or governance note.")
 
 
-class DeploymentCreate(BaseModel):
+class DeploymentCreate(TenantScopedCreate):
     model_id: str = Field(..., description="Model artifact to deploy.")
     champion_model_id: str | None = Field(
         default=None,
@@ -147,7 +164,7 @@ class RollbackDeploymentRequest(BaseModel):
     notes: str = Field(default="")
 
 
-class PromptTemplateCreate(BaseModel):
+class PromptTemplateCreate(TenantScopedCreate):
     name: str = Field(..., description="Prompt template name.")
     version: str = Field(..., description="Prompt template version.")
     template_text: str = Field(..., description="Template body. Use synthetic examples only.")
@@ -163,7 +180,7 @@ class PromptTemplateRead(PromptTemplateCreate):
     created_at: datetime
 
 
-class PromptCardCreate(BaseModel):
+class PromptCardCreate(TenantScopedCreate):
     model_config = ConfigDict(extra="forbid")
 
     prompt_id: str = Field(..., description="Prompt template identifier covered by this card.")
@@ -196,7 +213,7 @@ class PromptCardRead(PromptCardCreate):
     updated_at: datetime
 
 
-class EvaluationRunCreate(BaseModel):
+class EvaluationRunCreate(TenantScopedCreate):
     target_type: str = Field(..., description="Evaluated target type, such as model or prompt.")
     target_id: str = Field(..., description="Evaluated target identifier.")
     metrics_json: dict[str, Any] = Field(default_factory=dict)
@@ -211,7 +228,7 @@ class EvaluationRunRead(EvaluationRunCreate):
     created_at: datetime
 
 
-class ApprovalCreate(BaseModel):
+class ApprovalCreate(TenantScopedCreate):
     target_type: str = Field(..., description="Approval target type.")
     target_id: str = Field(..., description="Approval target identifier.")
     approver: str = Field(..., description="Synthetic approver identifier or team alias.")
@@ -230,6 +247,7 @@ class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    tenant_id: str
     actor: str
     action: str
     target_type: str
@@ -239,7 +257,7 @@ class AuditEventRead(BaseModel):
     created_at: datetime
 
 
-class AuditEventCreate(BaseModel):
+class AuditEventCreate(TenantScopedCreate):
     actor: str = Field(..., description="Synthetic actor or service identifier.")
     action: str = Field(..., description="Action name for the audit event.")
     target_type: str = Field(..., description="Target resource type.")
@@ -248,7 +266,7 @@ class AuditEventCreate(BaseModel):
     metadata_json: dict[str, Any] = Field(default_factory=dict)
 
 
-class PredictionEventCreate(BaseModel):
+class PredictionEventCreate(TenantScopedCreate):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str = Field(..., description="Served model name.")
@@ -270,7 +288,7 @@ class PredictionEventRead(PredictionEventCreate):
     created_at: datetime
 
 
-class ModelErrorEventCreate(BaseModel):
+class ModelErrorEventCreate(TenantScopedCreate):
     model_config = ConfigDict(extra="forbid")
 
     model_name: str = Field(..., description="Served model name.")
@@ -348,3 +366,147 @@ class MonitoringSummaryResponse(BaseModel):
     latest_drift_status: DriftStatus | None
     latest_drift_snapshot_id: str | None
     dashboard_contract: dict[str, Any]
+
+
+class ImprovementRecommendation(BaseModel):
+    category: str
+    priority: str
+    message: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class RagImprovementSummaryResponse(BaseModel):
+    total_queries: int
+    retry_rate: float
+    verification_failure_rate: float
+    fallback_rate: float
+    average_groundedness: float
+    flag_counts: dict[str, int]
+    failed_eval_count: int
+    recommendations: list[ImprovementRecommendation]
+
+
+class WorkflowRunCreate(TenantScopedCreate):
+    workflow_type: str = Field(..., description="Workflow or agent plan type.")
+    target_type: str = Field(..., description="Target business object type.")
+    target_id: str = Field(..., description="Target business object identifier.")
+    requested_by: str = Field(..., description="Workflow requester or initiating service.")
+    review_required: bool = Field(default=False)
+    steps_json: list[dict[str, Any]] = Field(default_factory=list)
+    input_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    workflow_type: str
+    target_type: str
+    target_id: str
+    status: WorkflowStatus | str
+    current_step: str
+    requested_by: str
+    assigned_reviewer: str | None
+    review_required: bool
+    steps_json: list[dict[str, Any]]
+    input_json: dict[str, Any]
+    output_json: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkflowSignalCreate(TenantScopedCreate):
+    signal_type: str = Field(..., description="Signal or observation emitted by a service.")
+    signal_metadata: dict[str, Any] = Field(default_factory=dict)
+    actor: str | None = Field(default=None)
+
+
+class ReviewQueueItemCreate(TenantScopedCreate):
+    workflow_run_id: str
+    case_id: str | None = None
+    queue_name: str = "medical-claims-review"
+    review_type: str = "human_validation"
+    priority: str = "normal"
+    payload_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReviewQueueAssignmentRequest(BaseModel):
+    assigned_to: str
+    actor: str | None = None
+
+
+class ReviewQueueResolveRequest(BaseModel):
+    decision: str
+    rationale: str = ""
+    actor: str | None = None
+
+
+class ReviewQueueItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    workflow_run_id: str
+    case_id: str | None
+    queue_name: str
+    review_type: str
+    priority: str
+    status: ReviewQueueStatus | str
+    assigned_to: str | None
+    decision: str | None
+    rationale: str
+    payload_json: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaymentIntegrityCaseCreate(TenantScopedCreate):
+    claim_id_synthetic: str
+    member_id_synthetic: str
+    provider_id_synthetic: str
+    policy_doc_id: str = "claims_review_policy"
+    requested_by: str = "claims-ops"
+    start_workflow: bool = True
+    findings_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class PaymentIntegrityCaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    claim_id_synthetic: str
+    member_id_synthetic: str
+    provider_id_synthetic: str
+    policy_doc_id: str
+    workflow_run_id: str | None
+    status: PaymentIntegrityCaseStatus | str
+    queue_status: str
+    risk_score: float | None
+    risk_band: RiskBand | str | None
+    automation_decision: str
+    final_decision: str | None
+    assigned_reviewer: str | None
+    findings_json: dict[str, Any]
+    source_ids_json: list[str]
+    last_action: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaymentIntegrityFindingsCreate(TenantScopedCreate):
+    workflow_run_id: str | None = None
+    risk_score: float | None = Field(default=None, ge=0, le=1)
+    risk_band: RiskBand | None = None
+    automation_decision: str = "pending"
+    findings_json: dict[str, Any] = Field(default_factory=dict)
+    source_ids_json: list[str] = Field(default_factory=list)
+    human_review_required: bool = False
+    actor: str | None = None
+
+
+class PaymentIntegrityResolveRequest(TenantScopedCreate):
+    final_decision: str
+    rationale: str = ""
+    actor: str | None = None

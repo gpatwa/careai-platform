@@ -81,4 +81,5 @@ class EvaluationReport(BaseModel):
     aggregate_metrics: AggregateMetrics
     passed: bool
     item_results: list[ItemMetricResult]
+    improvement_recommendations: list[dict[str, Any]] = Field(default_factory=list)
     control_plane_registration: dict[str, Any] = Field(default_factory=dict)

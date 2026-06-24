@@ -1,7 +1,12 @@
 from careai_common.events import build_event
 from careai_control_plane_api.database import Database
 from careai_control_plane_api.event_consumer import consume_events
-from careai_control_plane_api.models import AuditEventORM, DriftSnapshotORM, PredictionEventORM
+from careai_control_plane_api.models import (
+    AuditEventORM,
+    DriftSnapshotORM,
+    EvaluationRunORM,
+    PredictionEventORM,
+)
 from sqlalchemy import select
 
 
@@ -40,13 +45,17 @@ def test_event_consumer_materializes_monitoring_and_audit_records() -> None:
                         "role": "clinical_ops",
                         "prompt_template_id": "prompt-local",
                         "prompt_version": "local-v1",
+                        "tenant_id": "payer-demo",
                         "retrieved_source_ids": ["prior_authorization_policy-0000"],
                         "model_name": "local-deterministic-rag",
                         "provider": "local-mock",
-                        "safety_flags": [],
+                        "safety_flags": ["verification_retry_used"],
                         "human_review_required": False,
-                        "groundedness_score": 0.75,
+                        "groundedness_score": 0.42,
                         "fallback_mode": True,
+                        "attempt_count": 2,
+                        "verification_passed": False,
+                        "verification_flags": ["missing_inline_citations", "low_groundedness"],
                     },
                 ),
                 build_event(
@@ -74,7 +83,8 @@ def test_event_consumer_materializes_monitoring_and_audit_records() -> None:
         )
 
         prediction = session.scalars(select(PredictionEventORM)).one()
-        audit = session.scalars(select(AuditEventORM)).one()
+        audits = list(session.scalars(select(AuditEventORM).order_by(AuditEventORM.action)))
+        evaluation = session.scalars(select(EvaluationRunORM)).one()
         drift = session.scalars(select(DriftSnapshotORM)).one()
     finally:
         session_generator.close()
@@ -86,8 +96,18 @@ def test_event_consumer_materializes_monitoring_and_audit_records() -> None:
     }
     assert prediction.model_name == "claims-risk"
     assert prediction.risk_band == "high"
+    assert len(audits) == 4
+    audit = next(item for item in audits if item.action == "rag.query_answered")
     assert audit.action == "rag.query_answered"
     assert audit.metadata_json["event_type"] == "rag.query_answered"
+    assert audit.metadata_json["attempt_count"] == 2
+    assert audit.metadata_json["verification_passed"] is False
+    improvements = [item for item in audits if item.action == "rag.improvement_candidate_detected"]
+    assert len(improvements) == 3
+    assert all(item.target_type == "prompt" for item in improvements)
+    assert evaluation.target_type == "rag_online"
+    assert evaluation.passed is False
+    assert evaluation.metrics_json["attempt_count"] == 2
     assert drift.id == "snapshot-001"
     assert drift.drift_status == "red"
     assert drift.baseline_count == 10

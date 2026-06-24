@@ -12,6 +12,15 @@ class RagQueryRequest(BaseModel):
     conversation_id: str | None = Field(default=None)
     prompt_template_id: str | None = Field(default=None)
     top_k: int = Field(default=4, ge=1, le=10)
+    tenant_id: str | None = Field(
+        default=None,
+        description="Optional tenant or customer identifier.",
+    )
+    workflow_run_id: str | None = Field(default=None, description="Optional linked workflow run.")
+    payment_integrity_case_id: str | None = Field(
+        default=None,
+        description="Optional synthetic payment integrity case identifier.",
+    )
 
 
 class RetrievedChunk(BaseModel):
@@ -52,6 +61,23 @@ class RetrievalMetadata(BaseModel):
     source_ids: list[str]
 
 
+class AgentAttemptMetadata(BaseModel):
+    attempt_number: int
+    retrieval_query: str
+    returned_chunks: int
+    source_ids: list[str]
+    verification_passed: bool
+    verification_flags: list[str]
+    groundedness_score: float = Field(..., ge=0, le=1)
+
+
+class AgentLoopMetadata(BaseModel):
+    attempt_count: int
+    verification_passed: bool
+    final_groundedness_score: float = Field(..., ge=0, le=1)
+    attempts: list[AgentAttemptMetadata]
+
+
 class RagQueryResponse(BaseModel):
     answer: str
     citations: list[Citation]
@@ -61,8 +87,12 @@ class RagQueryResponse(BaseModel):
     provider_metadata: ProviderMetadata
     prompt: PromptMetadata
     retrieval_metadata: RetrievalMetadata
+    agent_loop: AgentLoopMetadata
     retrieved_chunks: list[RetrievedChunk]
     correlation_id: str
+    tenant_id: str = "default"
+    workflow_run_id: str | None = None
+    payment_integrity_case_id: str | None = None
 
 
 class EvaluateAnswerRequest(BaseModel):

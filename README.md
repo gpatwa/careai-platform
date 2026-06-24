@@ -4,6 +4,8 @@
 
 The platform is intended to show the full lifecycle of model and RAG systems: synthetic data generation, model training, experiment tracking, model registry metadata, promotion, deployment, inference, monitoring, rollback, document ingestion, chunking, embeddings, Azure AI Search retrieval, prompt management, evaluations, safety checks, audit trails, and governance controls.
 
+It now also demonstrates a payer-style agent workflow path: tenant-aware workflow runs, Payment Integrity case intake, model scoring, policy retrieval, human review queue escalation, and final case resolution.
+
 ## Architecture
 
 ```mermaid
@@ -125,6 +127,7 @@ Run the frontend:
 ```bash
 export VITE_CONTROL_PLANE_API_URL=http://localhost:8000
 export VITE_RAG_SERVICE_URL=http://localhost:8002
+export VITE_DEFAULT_TENANT_ID=payer-demo
 npm --prefix apps/web-console run dev
 ```
 
@@ -184,13 +187,14 @@ scripts/demo_azure_smoke_test.sh
 
 ## Web Console Demo
 
-The web console is a TypeScript/Vite interview dashboard for the control plane, MLOps lifecycle, LLMOps lifecycle, monitoring, and governance views. It tries the local APIs first and falls back to synthetic mock data if one of the services is offline, which keeps the interview flow usable while infrastructure is starting.
+The web console is a TypeScript/Vite interview dashboard for the control plane, MLOps lifecycle, LLMOps lifecycle, monitoring, governance, workflow runs, human review queue items, tenant context, and Payment Integrity case flow. It tries the local APIs first and falls back to synthetic mock data if one of the services is offline, which keeps the interview flow usable while infrastructure is starting.
 
 Architecture and deployment docs:
 
 - [System architecture](docs/diagrams/system_architecture.md)
 - [Data flow](docs/diagrams/data_flow.md)
 - [Azure network architecture](docs/diagrams/azure_network_architecture.md)
+- [Local vs Azure stack](docs/local_vs_azure_stack.md)
 - [Local deployment runbook](docs/deployment/local_deployment.md)
 - [Azure deployment runbook](docs/deployment/azure_deployment_runbook.md)
 - [Final architecture review](docs/final_architecture_review.md)
@@ -203,7 +207,7 @@ Demo flow:
 4. Open Deployments to show champion/challenger traffic split, canary status, rollback target, and safety health.
 5. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
 6. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
-7. Open Governance to show release gates, approvals, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
+7. Open Governance to show release gates, approvals, workflow runs, human review queue items, Payment Integrity cases, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
 
 Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 
@@ -339,7 +343,7 @@ Set `AZURE_AI_SEARCH_ENDPOINT`, `AZURE_AI_SEARCH_API_KEY`, `AZURE_OPENAI_ENDPOIN
 
 ## RAG Gateway API
 
-The RAG service answers healthcare-operations questions over the synthetic document index. It enforces role-based retrieval filters, uses approved control-plane prompts when available, falls back to a local prompt and mock LLM provider for offline demos, returns citations, evaluates groundedness, and emits safe audit metadata without raw question or answer text.
+The RAG service answers healthcare-operations questions over the synthetic document index. It enforces role-based retrieval filters, uses approved control-plane prompts when available, falls back to a local prompt and mock LLM provider for offline demos, and now runs a small loop-engineering harness: retrieve, answer, verify groundedness/citations, retry once with verifier feedback, then emit safe audit metadata without raw question or answer text.
 
 Start dependencies and the service:
 
@@ -379,6 +383,8 @@ Set `AZURE_OPENAI_CHAT_DEPLOYMENT` with the existing Azure OpenAI variables to u
 ## RAG Evaluation
 
 The GenAI evaluation pipeline runs a synthetic 20-question eval set against the RAG gateway and writes an audit-ready JSON report with retrieval, citation, relevance, groundedness, safety, latency, and token-count-placeholder metrics.
+
+The report also includes deterministic improvement recommendations so failed evals can feed prompt, retrieval, or safety-tuning work instead of stopping at pass/fail.
 
 ```bash
 python -m evaluate_rag.run \

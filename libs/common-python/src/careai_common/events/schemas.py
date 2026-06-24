@@ -68,6 +68,9 @@ class RagQueryAnsweredPayload(EventPayload):
     role: str
     prompt_template_id: str
     prompt_version: str
+    tenant_id: str = "default"
+    workflow_run_id: str | None = None
+    payment_integrity_case_id: str | None = None
     retrieved_source_ids: list[str] = Field(default_factory=list)
     model_name: str
     provider: str
@@ -75,6 +78,9 @@ class RagQueryAnsweredPayload(EventPayload):
     human_review_required: bool
     groundedness_score: float = Field(..., ge=0, le=1)
     fallback_mode: bool = False
+    attempt_count: int = Field(default=1, ge=1)
+    verification_passed: bool = True
+    verification_flags: list[str] = Field(default_factory=list)
 
 
 class FeedbackReceivedPayload(EventPayload):

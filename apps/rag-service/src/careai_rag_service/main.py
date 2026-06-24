@@ -14,6 +14,7 @@ from careai_common.observability import instrument_fastapi_app
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from careai_rag_service.agent import run_agent_loop
 from careai_rag_service.audit import AuditClient
 from careai_rag_service.llm import LLMProvider, llm_provider_from_env
 from careai_rag_service.prompts import PromptRegistry
@@ -26,6 +27,8 @@ from careai_rag_service.safety import (
     rejected_safety_flags,
 )
 from careai_rag_service.schemas import (
+    AgentAttemptMetadata,
+    AgentLoopMetadata,
     Citation,
     EvaluateAnswerRequest,
     EvaluateAnswerResponse,
@@ -180,34 +183,33 @@ def register_routes(application: FastAPI) -> None:
             )
 
         safety_flags = advisory_safety_flags(payload.question)
-        retrieval_started_at = perf_counter()
-        chunks = application.state.retriever.search(
-            query=payload.question,
-            role=payload.role,
-            top_k=payload.top_k,
-        )
-        retrieval_latency_ms = max((perf_counter() - retrieval_started_at) * 1000, 0.0)
-        if not chunks:
-            safety_flags.append("no_role_authorized_context_found")
-
         prompt = application.state.prompt_registry.select_prompt(payload.prompt_template_id)
         correlation_id = ensure_correlation_id()
-        llm_started_at = perf_counter()
-        llm_response = application.state.llm_provider.generate_answer(
-            question=payload.question,
+        tenant_id = payload.tenant_id or settings.default_tenant_id
+        agent_started_at = perf_counter()
+        agent_result = run_agent_loop(
+            retriever=application.state.retriever,
+            llm_provider=application.state.llm_provider,
             prompt=prompt,
-            retrieved_chunks=chunks,
-            safety_flags=safety_flags,
+            question=payload.question,
+            role=payload.role,
+            top_k=payload.top_k,
             correlation_id=correlation_id,
+            base_safety_flags=safety_flags,
         )
-        llm_latency_ms = max((perf_counter() - llm_started_at) * 1000, 0.0)
+        agent_latency_ms = max((perf_counter() - agent_started_at) * 1000, 0.0)
+        final_attempt = agent_result.final_attempt
+        chunks = final_attempt.retrieved_chunks
+        llm_response = final_attempt.llm_response
         citations = citations_from_chunks(chunks)
-        if chunks and not has_source_citation(llm_response.answer, chunks):
-            safety_flags.append("missing_inline_citations")
-
-        score = groundedness_score(llm_response.answer, chunks)
+        score = final_attempt.verification.groundedness_score
+        safety_flags = agent_result.combined_safety_flags
         source_ids = [chunk.source_id for chunk in chunks]
         review_required = human_review_required(safety_flags)
+        attempt_count = len(agent_result.attempts)
+        verification_passed = final_attempt.verification.passed
+        retrieval_latency_ms = round(agent_latency_ms / max(attempt_count, 1), 2)
+        llm_latency_ms = retrieval_latency_ms
 
         logger.info(
             "RAG query answered",
@@ -220,6 +222,8 @@ def register_routes(application: FastAPI) -> None:
                 "prompt_version": prompt.version,
                 "safety_flag_count": len(safety_flags),
                 "human_review_required": review_required,
+                "attempt_count": attempt_count,
+                "verification_passed": verification_passed,
                 "retrieval_latency_ms": int(retrieval_latency_ms),
                 "llm_latency_ms": int(llm_latency_ms),
             },
@@ -236,6 +240,7 @@ def register_routes(application: FastAPI) -> None:
         application.state.audit_client.send_rag_query_event(
             user_id=payload.user_id,
             correlation_id=correlation_id,
+            tenant_id=tenant_id,
             metadata={
                 "prompt_template_id": prompt.id,
                 "prompt_version": prompt.version,
@@ -244,10 +249,36 @@ def register_routes(application: FastAPI) -> None:
                 "provider": llm_response.provider,
                 "safety_flags": safety_flags,
                 "role": payload.role,
+                "tenant_id": tenant_id,
+                "workflow_run_id": payload.workflow_run_id,
+                "payment_integrity_case_id": payload.payment_integrity_case_id,
                 "human_review_required": review_required,
+                "attempt_count": attempt_count,
+                "verification_passed": verification_passed,
+                "verification_flags": final_attempt.verification.flags,
                 "conversation_present": payload.conversation_id is not None,
             },
         )
+        if payload.workflow_run_id:
+            application.state.audit_client.send_workflow_signal(
+                workflow_run_id=payload.workflow_run_id,
+                signal_type="policy_answered",
+                actor="rag-service",
+                tenant_id=tenant_id,
+                signal_metadata={
+                    "retrieved_source_ids": source_ids,
+                    "role": payload.role,
+                    "human_review_required": review_required,
+                    "safety_flags": safety_flags,
+                    "model_name": llm_response.model_name,
+                    "provider": llm_response.provider,
+                    "payment_integrity_case_id": payload.payment_integrity_case_id,
+                    "source_ids": source_ids,
+                    "attempt_count": attempt_count,
+                    "verification_passed": verification_passed,
+                    "verification_flags": final_attempt.verification.flags,
+                },
+            )
         publish_event_safely(
             application.state.event_publisher,
             build_event(
@@ -260,6 +291,9 @@ def register_routes(application: FastAPI) -> None:
                     "role": payload.role,
                     "prompt_template_id": prompt.id,
                     "prompt_version": prompt.version,
+                    "tenant_id": tenant_id,
+                    "workflow_run_id": payload.workflow_run_id,
+                    "payment_integrity_case_id": payload.payment_integrity_case_id,
                     "retrieved_source_ids": source_ids,
                     "model_name": llm_response.model_name,
                     "provider": llm_response.provider,
@@ -267,6 +301,9 @@ def register_routes(application: FastAPI) -> None:
                     "human_review_required": review_required,
                     "groundedness_score": score,
                     "fallback_mode": llm_response.fallback_mode,
+                    "attempt_count": attempt_count,
+                    "verification_passed": verification_passed,
+                    "verification_flags": final_attempt.verification.flags,
                 },
             ),
         )
@@ -294,8 +331,28 @@ def register_routes(application: FastAPI) -> None:
                 role_filter=payload.role,
                 source_ids=source_ids,
             ),
+            agent_loop=AgentLoopMetadata(
+                attempt_count=attempt_count,
+                verification_passed=verification_passed,
+                final_groundedness_score=score,
+                attempts=[
+                    AgentAttemptMetadata(
+                        attempt_number=attempt.attempt_number,
+                        retrieval_query=attempt.retrieval_query,
+                        returned_chunks=len(attempt.retrieved_chunks),
+                        source_ids=[chunk.source_id for chunk in attempt.retrieved_chunks],
+                        verification_passed=attempt.verification.passed,
+                        verification_flags=attempt.verification.flags,
+                        groundedness_score=attempt.verification.groundedness_score,
+                    )
+                    for attempt in agent_result.attempts
+                ],
+            ),
             retrieved_chunks=chunks,
             correlation_id=correlation_id,
+            tenant_id=tenant_id,
+            workflow_run_id=payload.workflow_run_id,
+            payment_integrity_case_id=payload.payment_integrity_case_id,
         )
 
     @application.post(

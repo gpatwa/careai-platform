@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from statistics import mean
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from careai_control_plane_api.improvement import summarize_rag_improvements
 from careai_control_plane_api.models import (
     ApprovalORM,
     AuditEventORM,
@@ -20,9 +22,12 @@ from careai_control_plane_api.models import (
     ModelArtifactORM,
     ModelCardORM,
     ModelErrorEventORM,
+    PaymentIntegrityCaseORM,
     PredictionEventORM,
     PromptCardORM,
     PromptTemplateORM,
+    ReviewQueueItemORM,
+    WorkflowRunORM,
 )
 from careai_control_plane_api.monitoring import (
     calculate_drift,
@@ -52,6 +57,10 @@ from careai_control_plane_api.schemas import (
     ModelErrorEventCreate,
     ModelErrorEventRead,
     MonitoringSummaryResponse,
+    PaymentIntegrityCaseCreate,
+    PaymentIntegrityCaseRead,
+    PaymentIntegrityFindingsCreate,
+    PaymentIntegrityResolveRequest,
     PredictionEventCreate,
     PredictionEventRead,
     PromoteModelRequest,
@@ -60,8 +69,16 @@ from careai_control_plane_api.schemas import (
     PromptCardUpdate,
     PromptTemplateCreate,
     PromptTemplateRead,
+    RagImprovementSummaryResponse,
+    ReviewQueueAssignmentRequest,
+    ReviewQueueItemCreate,
+    ReviewQueueItemRead,
+    ReviewQueueResolveRequest,
     RollbackDeploymentRequest,
     SetTrafficRequest,
+    WorkflowRunCreate,
+    WorkflowRunRead,
+    WorkflowSignalCreate,
 )
 
 OrmModel = TypeVar("OrmModel")
@@ -81,9 +98,19 @@ def actor_from_request(request: Request, explicit_actor: str | None = None) -> s
     return explicit_actor or request.headers.get("x-actor") or "demo-operator"
 
 
+def tenant_from_request(request: Request, explicit_tenant_id: str | None = None) -> str:
+    return (
+        explicit_tenant_id
+        or request.headers.get("x-tenant-id")
+        or os.getenv("DEFAULT_TENANT_ID")
+        or "default"
+    )
+
+
 def write_audit_event(
     session: Session,
     *,
+    tenant_id: str,
     actor: str,
     action: str,
     target_type: str,
@@ -92,6 +119,7 @@ def write_audit_event(
 ) -> AuditEventORM:
     metadata = metadata or {}
     event = AuditEventORM(
+        tenant_id=tenant_id,
         actor=actor,
         action=action,
         target_type=target_type,
@@ -104,6 +132,7 @@ def write_audit_event(
         "audit event recorded",
         extra={
             "actor": actor,
+            "tenant_id": tenant_id,
             "action": action,
             "target_type": target_type,
             "target_id": target_id,
@@ -126,74 +155,360 @@ def publish_event_safely(request: Request, event: EventEnvelope) -> bool:
         return False
 
 
-def list_records(session: Session, model: type[OrmModel]) -> list[OrmModel]:
-    return list(session.scalars(select(model).order_by(model.created_at.desc(), model.id.desc())))
+def tenant_scoped_query(model: type[OrmModel], tenant_id: str | None = None):
+    query = select(model)
+    if tenant_id is not None:
+        query = query.where(model.tenant_id == tenant_id)
+    return query
 
 
-def latest_model_for_name(session: Session, model_name: str) -> ModelArtifactORM | None:
-    return session.scalars(
-        select(ModelArtifactORM)
-        .where(ModelArtifactORM.name == model_name)
-        .order_by(ModelArtifactORM.created_at.desc(), ModelArtifactORM.id.desc())
-        .limit(1)
-    ).first()
-
-
-def model_card_for(session: Session, model_id: str) -> ModelCardORM | None:
-    return session.scalars(
-        select(ModelCardORM)
-        .where(ModelCardORM.model_id == model_id)
-        .order_by(
-            ModelCardORM.updated_at.desc(), ModelCardORM.created_at.desc(), ModelCardORM.id.desc()
-        )
-        .limit(1)
-    ).first()
-
-
-def prompt_card_for(session: Session, prompt_id: str) -> PromptCardORM | None:
-    return session.scalars(
-        select(PromptCardORM)
-        .where(PromptCardORM.prompt_id == prompt_id)
-        .order_by(
-            PromptCardORM.updated_at.desc(),
-            PromptCardORM.created_at.desc(),
-            PromptCardORM.id.desc(),
-        )
-        .limit(1)
-    ).first()
-
-
-def has_approved_human_approval(session: Session, target_type: str, target_id: str) -> bool:
-    return (
+def list_records(
+    session: Session,
+    model: type[OrmModel],
+    *,
+    tenant_id: str | None = None,
+) -> list[OrmModel]:
+    return list(
         session.scalars(
-            select(ApprovalORM)
-            .where(
-                ApprovalORM.target_type == target_type,
-                ApprovalORM.target_id == target_id,
-                ApprovalORM.decision == "approved",
+            tenant_scoped_query(model, tenant_id).order_by(
+                model.created_at.desc(),
+                model.id.desc(),
             )
-            .limit(1)
-        ).first()
-        is not None
+        )
     )
 
 
-def is_model_production_ready(session: Session, model_id: str) -> tuple[bool, list[str]]:
+def get_record_or_404(
+    session: Session,
+    model: type[OrmModel],
+    record_id: str,
+    *,
+    detail: str,
+    tenant_id: str | None = None,
+) -> OrmModel:
+    record = session.scalars(
+        tenant_scoped_query(model, tenant_id)
+        .where(model.id == record_id)
+        .limit(1)
+    ).first()
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return record
+
+
+def workflow_or_404(
+    session: Session,
+    workflow_run_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> WorkflowRunORM:
+    return get_record_or_404(
+        session,
+        WorkflowRunORM,
+        workflow_run_id,
+        detail="Workflow run not found",
+        tenant_id=tenant_id,
+    )
+
+
+def review_queue_item_or_404(
+    session: Session,
+    item_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> ReviewQueueItemORM:
+    return get_record_or_404(
+        session,
+        ReviewQueueItemORM,
+        item_id,
+        detail="Review queue item not found",
+        tenant_id=tenant_id,
+    )
+
+
+def payment_integrity_case_or_404(
+    session: Session,
+    case_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> PaymentIntegrityCaseORM:
+    return get_record_or_404(
+        session,
+        PaymentIntegrityCaseORM,
+        case_id,
+        detail="Payment integrity case not found",
+        tenant_id=tenant_id,
+    )
+
+
+def default_workflow_steps(workflow_type: str) -> list[dict[str, Any]]:
+    if workflow_type == "payment_integrity_claim_review":
+        return [
+            {"name": "intake", "kind": "system"},
+            {"name": "claims_risk_scoring", "kind": "model"},
+            {"name": "policy_retrieval", "kind": "rag"},
+            {"name": "human_review", "kind": "human"},
+            {"name": "decision", "kind": "system"},
+        ]
+    return [
+        {"name": "queued", "kind": "system"},
+        {"name": "processing", "kind": "service"},
+        {"name": "completed", "kind": "system"},
+    ]
+
+
+def create_review_queue_item(
+    session: Session,
+    *,
+    tenant_id: str,
+    workflow_run_id: str,
+    case_id: str | None,
+    payload_json: dict[str, Any],
+    priority: str = "normal",
+) -> ReviewQueueItemORM:
+    existing = session.scalars(
+        select(ReviewQueueItemORM)
+        .where(
+            ReviewQueueItemORM.tenant_id == tenant_id,
+            ReviewQueueItemORM.workflow_run_id == workflow_run_id,
+            ReviewQueueItemORM.status.in_(["pending", "assigned"]),
+        )
+        .limit(1)
+    ).first()
+    if existing is not None:
+        return existing
+
+    queue_item = ReviewQueueItemORM(
+        tenant_id=tenant_id,
+        workflow_run_id=workflow_run_id,
+        case_id=case_id,
+        priority=priority,
+        payload_json=payload_json,
+    )
+    session.add(queue_item)
+    session.flush()
+    return queue_item
+
+
+def update_payment_case_from_signal(
+    case: PaymentIntegrityCaseORM,
+    *,
+    signal_type: str,
+    signal_metadata: dict[str, Any],
+) -> None:
+    case.last_action = signal_type
+    if signal_type == "claims_risk_scored":
+        case.status = "scoring"
+        case.risk_score = (
+            signal_metadata.get("prediction_score")
+            or signal_metadata.get("risk_score")
+        )
+        case.risk_band = signal_metadata.get("risk_band")
+        case.automation_decision = signal_metadata.get("automation_decision", "scored")
+        case.findings_json = {
+            **case.findings_json,
+            "claims_risk": signal_metadata,
+        }
+    elif signal_type == "policy_answered":
+        case.status = "policy_review"
+        case.findings_json = {
+            **case.findings_json,
+            "policy_review": signal_metadata,
+        }
+        source_ids = (
+            signal_metadata.get("source_ids")
+            or signal_metadata.get("retrieved_source_ids")
+            or []
+        )
+        case.source_ids_json = list(dict.fromkeys([*case.source_ids_json, *source_ids]))
+    elif signal_type == "human_review_required":
+        case.status = "pending_human_review"
+        case.queue_status = "pending"
+    elif signal_type == "human_review_completed":
+        case.status = "decision_ready"
+        case.queue_status = "completed"
+        case.final_decision = (
+            signal_metadata.get("final_decision")
+            or signal_metadata.get("decision")
+        )
+        case.assigned_reviewer = signal_metadata.get("assigned_to") or case.assigned_reviewer
+    elif signal_type == "case_closed":
+        case.status = "closed"
+        case.final_decision = signal_metadata.get("final_decision") or case.final_decision
+
+
+def advance_workflow_run(
+    session: Session,
+    workflow: WorkflowRunORM,
+    *,
+    signal_type: str,
+    signal_metadata: dict[str, Any],
+) -> ReviewQueueItemORM | None:
+    output_json = dict(workflow.output_json or {})
+    signals = list(output_json.get("signals", []))
+    signals.append(
+        {
+            "signal_type": signal_type,
+            "signal_metadata": signal_metadata,
+            "at": datetime.now(UTC).isoformat(),
+        }
+    )
+    output_json["signals"] = signals
+    workflow.output_json = output_json
+
+    review_item: ReviewQueueItemORM | None = None
+    if signal_type == "claims_risk_scored":
+        workflow.status = "running"
+        workflow.current_step = "policy_retrieval"
+        output_json["claims_risk"] = signal_metadata
+    elif signal_type == "policy_answered":
+        workflow.status = "running"
+        output_json["policy_answer"] = signal_metadata
+        score = (output_json.get("claims_risk") or {}).get("prediction_score") or 0.0
+        review_required = bool(signal_metadata.get("human_review_required")) or score >= 0.75
+        workflow.review_required = review_required
+        if review_required:
+            workflow.status = "waiting_for_review"
+            workflow.current_step = "human_review"
+            review_item = create_review_queue_item(
+                session,
+                tenant_id=workflow.tenant_id,
+                workflow_run_id=workflow.id,
+                case_id=(
+                    workflow.target_id
+                    if workflow.target_type == "payment_integrity_case"
+                    else None
+                ),
+                priority="high" if score >= 0.75 else "normal",
+                payload_json={
+                    "claims_risk": output_json.get("claims_risk", {}),
+                    "policy_answer": signal_metadata,
+                    "target_type": workflow.target_type,
+                    "target_id": workflow.target_id,
+                },
+            )
+        else:
+            workflow.current_step = "decision"
+            workflow.status = "completed"
+            output_json["automation_decision"] = "auto_clear"
+    elif signal_type == "human_review_completed":
+        workflow.current_step = "decision"
+        workflow.status = "completed"
+        workflow.assigned_reviewer = (
+            signal_metadata.get("assigned_to")
+            or workflow.assigned_reviewer
+        )
+        output_json["human_review"] = signal_metadata
+    elif signal_type == "case_closed":
+        workflow.current_step = "decision"
+        workflow.status = "completed"
+        output_json["case_closed"] = signal_metadata
+    else:
+        workflow.status = "running"
+        workflow.current_step = signal_type
+
+    linked_case = (
+        session.get(PaymentIntegrityCaseORM, workflow.target_id)
+        if workflow.target_type == "payment_integrity_case"
+        else None
+    )
+    if linked_case is not None:
+        update_payment_case_from_signal(
+            linked_case,
+            signal_type=signal_type,
+            signal_metadata=signal_metadata,
+        )
+        if review_item is not None:
+            linked_case.status = "pending_human_review"
+            linked_case.queue_status = review_item.status
+
+    return review_item
+
+
+def latest_model_for_name(
+    session: Session,
+    model_name: str,
+    tenant_id: str | None = None,
+) -> ModelArtifactORM | None:
+    query = select(ModelArtifactORM).where(ModelArtifactORM.name == model_name)
+    if tenant_id is not None:
+        query = query.where(ModelArtifactORM.tenant_id == tenant_id)
+    return session.scalars(
+        query.order_by(ModelArtifactORM.created_at.desc(), ModelArtifactORM.id.desc()).limit(1)
+    ).first()
+
+
+def model_card_for(
+    session: Session,
+    model_id: str,
+    tenant_id: str | None = None,
+) -> ModelCardORM | None:
+    query = select(ModelCardORM).where(ModelCardORM.model_id == model_id)
+    if tenant_id is not None:
+        query = query.where(ModelCardORM.tenant_id == tenant_id)
+    return session.scalars(
+        query.order_by(
+            ModelCardORM.updated_at.desc(),
+            ModelCardORM.created_at.desc(),
+            ModelCardORM.id.desc(),
+        ).limit(1)
+    ).first()
+
+
+def prompt_card_for(
+    session: Session,
+    prompt_id: str,
+    tenant_id: str | None = None,
+) -> PromptCardORM | None:
+    query = select(PromptCardORM).where(PromptCardORM.prompt_id == prompt_id)
+    if tenant_id is not None:
+        query = query.where(PromptCardORM.tenant_id == tenant_id)
+    return session.scalars(
+        query.order_by(
+            PromptCardORM.updated_at.desc(),
+            PromptCardORM.created_at.desc(),
+            PromptCardORM.id.desc(),
+        ).limit(1)
+    ).first()
+
+
+def has_approved_human_approval(
+    session: Session,
+    target_type: str,
+    target_id: str,
+    tenant_id: str | None = None,
+) -> bool:
+    query = select(ApprovalORM).where(
+        ApprovalORM.target_type == target_type,
+        ApprovalORM.target_id == target_id,
+        ApprovalORM.decision == "approved",
+    )
+    if tenant_id is not None:
+        query = query.where(ApprovalORM.tenant_id == tenant_id)
+    return session.scalars(query.limit(1)).first() is not None
+
+
+def is_model_production_ready(
+    session: Session,
+    model_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> tuple[bool, list[str]]:
     missing: list[str] = []
-    card = model_card_for(session, model_id)
+    card = model_card_for(session, model_id, tenant_id)
     if card is None:
         missing.append("approved_model_card")
     elif card.approval_status != "approved":
         missing.append("approved_model_card")
 
-    if not has_approved_human_approval(session, "model", model_id):
+    if not has_approved_human_approval(session, "model", model_id, tenant_id):
         missing.append("approved_model_governance_decision")
 
     return not missing, missing
 
 
 def is_prompt_production_ready(session: Session, prompt: PromptTemplateORM) -> bool:
-    card = prompt_card_for(session, prompt.id)
+    card = prompt_card_for(session, prompt.id, prompt.tenant_id)
     return prompt.status == "approved" and card is not None and card.approval_status == "approved"
 
 
@@ -225,11 +540,19 @@ def validate_traffic_split(split: dict[str, int]) -> dict[str, int]:
     return normalized
 
 
-def deployment_or_404(session: Session, deployment_id: str) -> DeploymentORM:
-    deployment = session.get(DeploymentORM, deployment_id)
-    if deployment is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
-    return deployment
+def deployment_or_404(
+    session: Session,
+    deployment_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> DeploymentORM:
+    return get_record_or_404(
+        session,
+        DeploymentORM,
+        deployment_id,
+        detail="Deployment not found",
+        tenant_id=tenant_id,
+    )
 
 
 def rollback_recommended_for(session: Session, deployment: DeploymentORM) -> bool:
@@ -237,8 +560,14 @@ def rollback_recommended_for(session: Session, deployment: DeploymentORM) -> boo
     if model is None:
         return False
 
-    events = list(session.scalars(monitoring_events_query(model.name, model.version)))
-    error_events = list(session.scalars(monitoring_error_events_query(model.name, model.version)))
+    events = list(
+        session.scalars(monitoring_events_query(model.name, model.version, deployment.tenant_id))
+    )
+    error_events = list(
+        session.scalars(
+            monitoring_error_events_query(model.name, model.version, deployment.tenant_id)
+        )
+    )
     observed_count = len(events) + len(error_events)
     error_rate = round(len(error_events) / observed_count, 6) if observed_count else 0.0
     p95_latency_ms = percentile(
@@ -255,6 +584,7 @@ def rollback_recommended_for(session: Session, deployment: DeploymentORM) -> boo
     latest_drift = session.scalars(
         select(DriftSnapshotORM)
         .where(
+            DriftSnapshotORM.tenant_id == deployment.tenant_id,
             DriftSnapshotORM.model_name == model.name,
             DriftSnapshotORM.model_version == model.version,
         )
@@ -273,15 +603,27 @@ def refresh_deployment_health(session: Session, deployment: DeploymentORM) -> No
         deployment.health_status = "rollback_recommended"
 
 
-def monitoring_events_query(model_name: str, model_version: str | None = None):
+def monitoring_events_query(
+    model_name: str,
+    model_version: str | None = None,
+    tenant_id: str | None = None,
+):
     query = select(PredictionEventORM).where(PredictionEventORM.model_name == model_name)
+    if tenant_id is not None:
+        query = query.where(PredictionEventORM.tenant_id == tenant_id)
     if model_version:
         query = query.where(PredictionEventORM.model_version == model_version)
     return query
 
 
-def monitoring_error_events_query(model_name: str, model_version: str | None = None):
+def monitoring_error_events_query(
+    model_name: str,
+    model_version: str | None = None,
+    tenant_id: str | None = None,
+):
     query = select(ModelErrorEventORM).where(ModelErrorEventORM.model_name == model_name)
+    if tenant_id is not None:
+        query = query.where(ModelErrorEventORM.tenant_id == tenant_id)
     if model_version:
         query = query.where(ModelErrorEventORM.model_version == model_version)
     return query
@@ -343,11 +685,13 @@ def create_dataset(
     request: Request,
     session: SessionDep,
 ) -> DatasetAssetORM:
-    dataset = DatasetAssetORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    dataset = DatasetAssetORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(dataset)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="dataset.created",
         target_type="dataset",
@@ -366,8 +710,8 @@ def create_dataset(
     summary="List dataset assets",
     description="Lists registered synthetic dataset assets.",
 )
-def get_datasets(session: SessionDep) -> list[DatasetAssetORM]:
-    return list_records(session, DatasetAssetORM)
+def get_datasets(request: Request, session: SessionDep) -> list[DatasetAssetORM]:
+    return list_records(session, DatasetAssetORM, tenant_id=tenant_from_request(request))
 
 
 @router.post(
@@ -383,11 +727,13 @@ def create_model(
     request: Request,
     session: SessionDep,
 ) -> ModelArtifactORM:
-    model = ModelArtifactORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    model = ModelArtifactORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(model)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="model.created",
         target_type="model",
@@ -406,8 +752,8 @@ def create_model(
     summary="List model artifacts",
     description="Lists registered model artifacts and lifecycle stages.",
 )
-def get_models(session: SessionDep) -> list[ModelArtifactORM]:
-    return list_records(session, ModelArtifactORM)
+def get_models(request: Request, session: SessionDep) -> list[ModelArtifactORM]:
+    return list_records(session, ModelArtifactORM, tenant_id=tenant_from_request(request))
 
 
 @router.get(
@@ -417,11 +763,14 @@ def get_models(session: SessionDep) -> list[ModelArtifactORM]:
     summary="Get a model artifact",
     description="Retrieves one model artifact by identifier.",
 )
-def get_model(model_id: str, session: SessionDep) -> ModelArtifactORM:
-    model = session.get(ModelArtifactORM, model_id)
-    if model is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
-    return model
+def get_model(model_id: str, request: Request, session: SessionDep) -> ModelArtifactORM:
+    return get_record_or_404(
+        session,
+        ModelArtifactORM,
+        model_id,
+        detail="Model not found",
+        tenant_id=tenant_from_request(request),
+    )
 
 
 @router.post(
@@ -437,19 +786,25 @@ def create_model_card(
     request: Request,
     session: SessionDep,
 ) -> ModelCardORM:
-    if session.get(ModelArtifactORM, payload.model_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
-    if model_card_for(session, payload.model_id) is not None:
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    get_record_or_404(
+        session,
+        ModelArtifactORM,
+        payload.model_id,
+        detail="Model not found",
+        tenant_id=tenant_id,
+    )
+    if model_card_for(session, payload.model_id, tenant_id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Model card already exists; use PUT to update it",
         )
-
-    card = ModelCardORM(**payload.model_dump())
+    card = ModelCardORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(card)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="model_card.created",
         target_type="model",
@@ -468,8 +823,8 @@ def create_model_card(
     summary="List model cards",
     description="Lists responsible AI model cards.",
 )
-def get_model_cards(session: SessionDep) -> list[ModelCardORM]:
-    return list_records(session, ModelCardORM)
+def get_model_cards(request: Request, session: SessionDep) -> list[ModelCardORM]:
+    return list_records(session, ModelCardORM, tenant_id=tenant_from_request(request))
 
 
 @router.get(
@@ -479,8 +834,8 @@ def get_model_cards(session: SessionDep) -> list[ModelCardORM]:
     summary="Get a model card",
     description="Retrieves the model card for a registered synthetic model.",
 )
-def get_model_card(model_id: str, session: SessionDep) -> ModelCardORM:
-    card = model_card_for(session, model_id)
+def get_model_card(model_id: str, request: Request, session: SessionDep) -> ModelCardORM:
+    card = model_card_for(session, model_id, tenant_from_request(request))
     if card is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model card not found")
     return card
@@ -499,7 +854,7 @@ def update_model_card(
     request: Request,
     session: SessionDep,
 ) -> ModelCardORM:
-    card = model_card_for(session, model_id)
+    card = model_card_for(session, model_id, tenant_from_request(request))
     if card is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model card not found")
 
@@ -507,6 +862,7 @@ def update_model_card(
         setattr(card, field_name, value)
     write_audit_event(
         session,
+        tenant_id=card.tenant_id,
         actor=actor_from_request(request),
         action="model_card.updated",
         target_type="model",
@@ -531,13 +887,21 @@ def promote_model(
     request: Request,
     session: SessionDep,
 ) -> ModelArtifactORM:
-    model = session.get(ModelArtifactORM, model_id)
-    if model is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    model = get_record_or_404(
+        session,
+        ModelArtifactORM,
+        model_id,
+        detail="Model not found",
+        tenant_id=tenant_from_request(request),
+    )
 
     previous_stage = model.stage
     if payload.stage == "production":
-        production_ready, missing_controls = is_model_production_ready(session, model.id)
+        production_ready, missing_controls = is_model_production_ready(
+            session,
+            model.id,
+            tenant_id=model.tenant_id,
+        )
         if not production_ready:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -551,6 +915,7 @@ def promote_model(
     correlation_id = ensure_correlation_id()
     write_audit_event(
         session,
+        tenant_id=model.tenant_id,
         actor=actor_from_request(request, payload.actor),
         action="model.promoted",
         target_type="model",
@@ -597,17 +962,49 @@ def create_deployment(
     request: Request,
     session: SessionDep,
 ) -> DeploymentORM:
-    payload_data = payload.model_dump()
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    get_record_or_404(
+        session,
+        ModelArtifactORM,
+        payload.model_id,
+        detail="Model not found",
+        tenant_id=tenant_id,
+    )
+    payload_data = payload.model_dump(exclude={"tenant_id"})
     champion_model_id = payload.champion_model_id or payload.model_id
+    get_record_or_404(
+        session,
+        ModelArtifactORM,
+        champion_model_id,
+        detail="Champion model not found",
+        tenant_id=tenant_id,
+    )
+    if payload.challenger_model_id:
+        get_record_or_404(
+            session,
+            ModelArtifactORM,
+            payload.challenger_model_id,
+            detail="Challenger model not found",
+            tenant_id=tenant_id,
+        )
+    if payload.rollback_model_id:
+        get_record_or_404(
+            session,
+            ModelArtifactORM,
+            payload.rollback_model_id,
+            detail="Rollback model not found",
+            tenant_id=tenant_id,
+        )
     payload_data["champion_model_id"] = champion_model_id
     payload_data["rollback_model_id"] = payload.rollback_model_id or champion_model_id
     if not payload.traffic_split_json:
         payload_data["traffic_split_json"] = {champion_model_id: payload.traffic_percent}
-    deployment = DeploymentORM(**payload_data)
+    deployment = DeploymentORM(**payload_data, tenant_id=tenant_id)
     session.add(deployment)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="deployment.created",
         target_type="deployment",
@@ -626,8 +1023,8 @@ def create_deployment(
     summary="List deployments",
     description="Lists tracked deployment records.",
 )
-def get_deployments(session: SessionDep) -> list[DeploymentORM]:
-    deployments = list_records(session, DeploymentORM)
+def get_deployments(request: Request, session: SessionDep) -> list[DeploymentORM]:
+    deployments = list_records(session, DeploymentORM, tenant_id=tenant_from_request(request))
     for deployment in deployments:
         refresh_deployment_health(session, deployment)
     session.commit()
@@ -647,7 +1044,7 @@ def start_canary(
     request: Request,
     session: SessionDep,
 ) -> DeploymentORM:
-    deployment = deployment_or_404(session, deployment_id)
+    deployment = deployment_or_404(session, deployment_id, tenant_id=tenant_from_request(request))
     split = validate_traffic_split(
         {
             deployment.champion_model_id: 100 - payload.challenger_percent,
@@ -664,6 +1061,7 @@ def start_canary(
         deployment.rollback_model_id = deployment.champion_model_id
     write_audit_event(
         session,
+        tenant_id=deployment.tenant_id,
         actor=actor_from_request(request, payload.actor),
         action="deployment.canary_started",
         target_type="deployment",
@@ -693,7 +1091,7 @@ def set_deployment_traffic(
     request: Request,
     session: SessionDep,
 ) -> DeploymentORM:
-    deployment = deployment_or_404(session, deployment_id)
+    deployment = deployment_or_404(session, deployment_id, tenant_id=tenant_from_request(request))
     split = validate_traffic_split(payload.traffic_split_json)
     allowed_ids = {deployment.champion_model_id}
     if deployment.challenger_model_id:
@@ -716,6 +1114,7 @@ def set_deployment_traffic(
     refresh_deployment_health(session, deployment)
     write_audit_event(
         session,
+        tenant_id=deployment.tenant_id,
         actor=actor_from_request(request, payload.actor),
         action="deployment.traffic_updated",
         target_type="deployment",
@@ -740,7 +1139,7 @@ def rollback_deployment(
     request: Request,
     session: SessionDep,
 ) -> DeploymentORM:
-    deployment = deployment_or_404(session, deployment_id)
+    deployment = deployment_or_404(session, deployment_id, tenant_id=tenant_from_request(request))
     rollback_model_id = deployment.rollback_model_id or deployment.champion_model_id
     previous_champion_id = deployment.champion_model_id
     deployment.model_id = rollback_model_id
@@ -753,6 +1152,7 @@ def rollback_deployment(
     deployment.health_status = "rolled_back"
     write_audit_event(
         session,
+        tenant_id=deployment.tenant_id,
         actor=actor_from_request(request, payload.actor),
         action="deployment.rolled_back",
         target_type="deployment",
@@ -781,11 +1181,13 @@ def create_prompt(
     request: Request,
     session: SessionDep,
 ) -> PromptTemplateORM:
-    prompt = PromptTemplateORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    prompt = PromptTemplateORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(prompt)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="prompt.created",
         target_type="prompt",
@@ -810,19 +1212,25 @@ def create_prompt_card(
     request: Request,
     session: SessionDep,
 ) -> PromptCardORM:
-    if session.get(PromptTemplateORM, payload.prompt_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt not found")
-    if prompt_card_for(session, payload.prompt_id) is not None:
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    get_record_or_404(
+        session,
+        PromptTemplateORM,
+        payload.prompt_id,
+        detail="Prompt not found",
+        tenant_id=tenant_id,
+    )
+    if prompt_card_for(session, payload.prompt_id, tenant_id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prompt card already exists; use PUT to update it",
         )
-
-    card = PromptCardORM(**payload.model_dump())
+    card = PromptCardORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(card)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="prompt_card.created",
         target_type="prompt",
@@ -841,8 +1249,8 @@ def create_prompt_card(
     summary="List prompt cards",
     description="Lists responsible AI prompt cards.",
 )
-def get_prompt_cards(session: SessionDep) -> list[PromptCardORM]:
-    return list_records(session, PromptCardORM)
+def get_prompt_cards(request: Request, session: SessionDep) -> list[PromptCardORM]:
+    return list_records(session, PromptCardORM, tenant_id=tenant_from_request(request))
 
 
 @router.get(
@@ -852,8 +1260,8 @@ def get_prompt_cards(session: SessionDep) -> list[PromptCardORM]:
     summary="Get a prompt card",
     description="Retrieves the prompt card for a registered prompt template.",
 )
-def get_prompt_card(prompt_id: str, session: SessionDep) -> PromptCardORM:
-    card = prompt_card_for(session, prompt_id)
+def get_prompt_card(prompt_id: str, request: Request, session: SessionDep) -> PromptCardORM:
+    card = prompt_card_for(session, prompt_id, tenant_from_request(request))
     if card is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt card not found")
     return card
@@ -872,7 +1280,7 @@ def update_prompt_card(
     request: Request,
     session: SessionDep,
 ) -> PromptCardORM:
-    card = prompt_card_for(session, prompt_id)
+    card = prompt_card_for(session, prompt_id, tenant_from_request(request))
     if card is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prompt card not found")
 
@@ -880,6 +1288,7 @@ def update_prompt_card(
         setattr(card, field_name, value)
     write_audit_event(
         session,
+        tenant_id=card.tenant_id,
         actor=actor_from_request(request),
         action="prompt_card.updated",
         target_type="prompt",
@@ -899,10 +1308,11 @@ def update_prompt_card(
     description="Lists prompt templates and governance status.",
 )
 def get_prompts(
+    request: Request,
     session: SessionDep,
     production_ready_only: bool = Query(default=False),
 ) -> list[PromptTemplateORM]:
-    prompts = list_records(session, PromptTemplateORM)
+    prompts = list_records(session, PromptTemplateORM, tenant_id=tenant_from_request(request))
     if production_ready_only:
         return [prompt for prompt in prompts if is_prompt_production_ready(session, prompt)]
     return prompts
@@ -921,11 +1331,16 @@ def create_evaluation(
     request: Request,
     session: SessionDep,
 ) -> EvaluationRunORM:
-    evaluation = EvaluationRunORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    evaluation = EvaluationRunORM(
+        **payload.model_dump(exclude={"tenant_id"}),
+        tenant_id=tenant_id,
+    )
     session.add(evaluation)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="evaluation.created",
         target_type="evaluation",
@@ -948,8 +1363,8 @@ def create_evaluation(
     summary="List evaluation runs",
     description="Lists recorded model or prompt evaluation runs.",
 )
-def get_evaluations(session: SessionDep) -> list[EvaluationRunORM]:
-    return list_records(session, EvaluationRunORM)
+def get_evaluations(request: Request, session: SessionDep) -> list[EvaluationRunORM]:
+    return list_records(session, EvaluationRunORM, tenant_id=tenant_from_request(request))
 
 
 @router.post(
@@ -965,11 +1380,13 @@ def create_approval(
     request: Request,
     session: SessionDep,
 ) -> ApprovalORM:
-    approval = ApprovalORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    approval = ApprovalORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(approval)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request),
         action="approval.created",
         target_type="approval",
@@ -992,8 +1409,484 @@ def create_approval(
     summary="List approval decisions",
     description="Lists recorded approval decisions.",
 )
-def get_approvals(session: SessionDep) -> list[ApprovalORM]:
-    return list_records(session, ApprovalORM)
+def get_approvals(request: Request, session: SessionDep) -> list[ApprovalORM]:
+    return list_records(session, ApprovalORM, tenant_id=tenant_from_request(request))
+
+
+@router.post(
+    "/workflow-runs",
+    response_model=WorkflowRunRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Monitoring"],
+    summary="Create a workflow run",
+    description=(
+        "Creates a lightweight agent workflow run used to orchestrate models, retrieval, "
+        "and human-review handoffs for healthcare operations."
+    ),
+)
+def create_workflow_run(
+    payload: WorkflowRunCreate,
+    request: Request,
+    session: SessionDep,
+) -> WorkflowRunORM:
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    steps = payload.steps_json or default_workflow_steps(payload.workflow_type)
+    workflow = WorkflowRunORM(
+        tenant_id=tenant_id,
+        workflow_type=payload.workflow_type,
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        status="pending",
+        current_step=steps[0]["name"] if steps else "queued",
+        requested_by=payload.requested_by,
+        review_required=payload.review_required,
+        steps_json=steps,
+        input_json=payload.input_json,
+        output_json={},
+    )
+    session.add(workflow)
+    session.flush()
+    write_audit_event(
+        session,
+        tenant_id=tenant_id,
+        actor=actor_from_request(request, payload.requested_by),
+        action="workflow_run.created",
+        target_type="workflow_run",
+        target_id=workflow.id,
+        metadata={
+            "workflow_type": workflow.workflow_type,
+            "target_type": workflow.target_type,
+            "target_id": workflow.target_id,
+        },
+    )
+    session.commit()
+    session.refresh(workflow)
+    return workflow
+
+
+@router.get(
+    "/workflow-runs",
+    response_model=list[WorkflowRunRead],
+    tags=["Monitoring"],
+    summary="List workflow runs",
+    description="Lists orchestration runs for agent-driven healthcare operations workflows.",
+)
+def get_workflow_runs(request: Request, session: SessionDep) -> list[WorkflowRunORM]:
+    return list_records(session, WorkflowRunORM, tenant_id=tenant_from_request(request))
+
+
+@router.get(
+    "/workflow-runs/{workflow_run_id}",
+    response_model=WorkflowRunRead,
+    tags=["Monitoring"],
+    summary="Get a workflow run",
+    description="Retrieves one workflow run and its current step, outputs, and review status.",
+)
+def get_workflow_run(
+    workflow_run_id: str,
+    request: Request,
+    session: SessionDep,
+) -> WorkflowRunORM:
+    return workflow_or_404(session, workflow_run_id, tenant_id=tenant_from_request(request))
+
+
+@router.post(
+    "/workflow-runs/{workflow_run_id}/signals",
+    response_model=WorkflowRunRead,
+    tags=["Monitoring"],
+    summary="Advance a workflow run with a service signal",
+    description=(
+        "Receives service observations such as claims-risk scoring, policy retrieval, or "
+        "human review completion and advances the lightweight agent workflow state."
+    ),
+)
+def signal_workflow_run(
+    workflow_run_id: str,
+    payload: WorkflowSignalCreate,
+    request: Request,
+    session: SessionDep,
+) -> WorkflowRunORM:
+    workflow = workflow_or_404(session, workflow_run_id, tenant_id=tenant_from_request(request))
+    signal_metadata = dict(payload.signal_metadata)
+    review_item = advance_workflow_run(
+        session,
+        workflow,
+        signal_type=payload.signal_type,
+        signal_metadata=signal_metadata,
+    )
+    write_audit_event(
+        session,
+        tenant_id=workflow.tenant_id,
+        actor=actor_from_request(request, payload.actor),
+        action="workflow_run.signaled",
+        target_type="workflow_run",
+        target_id=workflow.id,
+        metadata={
+            "signal_type": payload.signal_type,
+            "review_queue_item_id": review_item.id if review_item else None,
+        },
+    )
+    session.commit()
+    session.refresh(workflow)
+    return workflow
+
+
+@router.post(
+    "/review-queue/items",
+    response_model=ReviewQueueItemRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Governance"],
+    summary="Create a human review queue item",
+    description="Adds a task to the human-in-the-loop review queue.",
+)
+def create_review_item(
+    payload: ReviewQueueItemCreate,
+    request: Request,
+    session: SessionDep,
+) -> ReviewQueueItemORM:
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    workflow_or_404(session, payload.workflow_run_id, tenant_id=tenant_id)
+    if payload.case_id:
+        payment_integrity_case_or_404(session, payload.case_id, tenant_id=tenant_id)
+    item = create_review_queue_item(
+        session,
+        tenant_id=tenant_id,
+        workflow_run_id=payload.workflow_run_id,
+        case_id=payload.case_id,
+        priority=payload.priority,
+        payload_json=payload.payload_json,
+    )
+    write_audit_event(
+        session,
+        tenant_id=tenant_id,
+        actor=actor_from_request(request),
+        action="review_queue_item.created",
+        target_type="review_queue_item",
+        target_id=item.id,
+        metadata={"workflow_run_id": item.workflow_run_id, "case_id": item.case_id},
+    )
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@router.get(
+    "/review-queue/items",
+    response_model=list[ReviewQueueItemRead],
+    tags=["Governance"],
+    summary="List review queue items",
+    description="Lists human-review work items for agent escalations and exception handling.",
+)
+def get_review_items(request: Request, session: SessionDep) -> list[ReviewQueueItemORM]:
+    return list_records(session, ReviewQueueItemORM, tenant_id=tenant_from_request(request))
+
+
+@router.post(
+    "/review-queue/items/{item_id}/assign",
+    response_model=ReviewQueueItemRead,
+    tags=["Governance"],
+    summary="Assign a review queue item",
+    description="Assigns a human reviewer to an escalated workflow item.",
+)
+def assign_review_item(
+    item_id: str,
+    payload: ReviewQueueAssignmentRequest,
+    request: Request,
+    session: SessionDep,
+) -> ReviewQueueItemORM:
+    item = review_queue_item_or_404(session, item_id, tenant_id=tenant_from_request(request))
+    item.assigned_to = payload.assigned_to
+    item.status = "assigned"
+    workflow = workflow_or_404(session, item.workflow_run_id, tenant_id=item.tenant_id)
+    workflow.assigned_reviewer = payload.assigned_to
+    linked_case = (
+        payment_integrity_case_or_404(session, item.case_id, tenant_id=item.tenant_id)
+        if item.case_id
+        else None
+    )
+    if linked_case is not None:
+        linked_case.assigned_reviewer = payload.assigned_to
+        linked_case.queue_status = "assigned"
+    write_audit_event(
+        session,
+        tenant_id=item.tenant_id,
+        actor=actor_from_request(request, payload.actor),
+        action="review_queue_item.assigned",
+        target_type="review_queue_item",
+        target_id=item.id,
+        metadata={"assigned_to": payload.assigned_to},
+    )
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@router.post(
+    "/review-queue/items/{item_id}/resolve",
+    response_model=ReviewQueueItemRead,
+    tags=["Governance"],
+    summary="Resolve a review queue item",
+    description="Completes a human-review item and advances linked workflow/case state.",
+)
+def resolve_review_item(
+    item_id: str,
+    payload: ReviewQueueResolveRequest,
+    request: Request,
+    session: SessionDep,
+) -> ReviewQueueItemORM:
+    item = review_queue_item_or_404(session, item_id, tenant_id=tenant_from_request(request))
+    item.status = "completed"
+    item.decision = payload.decision
+    item.rationale = payload.rationale
+    workflow = workflow_or_404(session, item.workflow_run_id, tenant_id=item.tenant_id)
+    advance_workflow_run(
+        session,
+        workflow,
+        signal_type="human_review_completed",
+        signal_metadata={
+            "decision": payload.decision,
+            "final_decision": payload.decision,
+            "rationale": payload.rationale,
+            "assigned_to": item.assigned_to,
+        },
+    )
+    linked_case = (
+        payment_integrity_case_or_404(session, item.case_id, tenant_id=item.tenant_id)
+        if item.case_id
+        else None
+    )
+    if linked_case is not None:
+        linked_case.final_decision = payload.decision
+        linked_case.status = "decision_ready"
+        linked_case.queue_status = "completed"
+    write_audit_event(
+        session,
+        tenant_id=item.tenant_id,
+        actor=actor_from_request(request, payload.actor),
+        action="review_queue_item.resolved",
+        target_type="review_queue_item",
+        target_id=item.id,
+        metadata={"decision": payload.decision},
+    )
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@router.post(
+    "/payment-integrity/cases",
+    response_model=PaymentIntegrityCaseRead,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Deployments"],
+    summary="Create a payment integrity case",
+    description=(
+        "Creates a synthetic Payment Integrity case and optionally launches a lightweight "
+        "agent workflow for claims risk, policy retrieval, and human review."
+    ),
+)
+def create_payment_integrity_case(
+    payload: PaymentIntegrityCaseCreate,
+    request: Request,
+    session: SessionDep,
+) -> PaymentIntegrityCaseORM:
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    case = PaymentIntegrityCaseORM(
+        tenant_id=tenant_id,
+        claim_id_synthetic=payload.claim_id_synthetic,
+        member_id_synthetic=payload.member_id_synthetic,
+        provider_id_synthetic=payload.provider_id_synthetic,
+        policy_doc_id=payload.policy_doc_id,
+        findings_json=payload.findings_json,
+    )
+    session.add(case)
+    session.flush()
+    if payload.start_workflow:
+        workflow = WorkflowRunORM(
+            tenant_id=tenant_id,
+            workflow_type="payment_integrity_claim_review",
+            target_type="payment_integrity_case",
+            target_id=case.id,
+            status="pending",
+            current_step="intake",
+            requested_by=payload.requested_by,
+            steps_json=default_workflow_steps("payment_integrity_claim_review"),
+            input_json={
+                "claim_id_synthetic": case.claim_id_synthetic,
+                "member_id_synthetic": case.member_id_synthetic,
+                "provider_id_synthetic": case.provider_id_synthetic,
+                "policy_doc_id": case.policy_doc_id,
+            },
+            output_json={},
+        )
+        session.add(workflow)
+        session.flush()
+        case.workflow_run_id = workflow.id
+    write_audit_event(
+        session,
+        tenant_id=tenant_id,
+        actor=actor_from_request(request, payload.requested_by),
+        action="payment_integrity_case.created",
+        target_type="payment_integrity_case",
+        target_id=case.id,
+        metadata={"workflow_run_id": case.workflow_run_id, "policy_doc_id": case.policy_doc_id},
+    )
+    session.commit()
+    session.refresh(case)
+    return case
+
+
+@router.get(
+    "/payment-integrity/cases",
+    response_model=list[PaymentIntegrityCaseRead],
+    tags=["Deployments"],
+    summary="List payment integrity cases",
+    description=(
+        "Lists synthetic Payment Integrity cases used to demo payer workflow orchestration."
+    ),
+)
+def get_payment_integrity_cases(
+    request: Request,
+    session: SessionDep,
+) -> list[PaymentIntegrityCaseORM]:
+    return list_records(
+        session,
+        PaymentIntegrityCaseORM,
+        tenant_id=tenant_from_request(request),
+    )
+
+
+@router.get(
+    "/payment-integrity/cases/{case_id}",
+    response_model=PaymentIntegrityCaseRead,
+    tags=["Deployments"],
+    summary="Get a payment integrity case",
+    description="Retrieves one synthetic Payment Integrity case and its current workflow state.",
+)
+def get_payment_integrity_case(
+    case_id: str,
+    request: Request,
+    session: SessionDep,
+) -> PaymentIntegrityCaseORM:
+    return payment_integrity_case_or_404(session, case_id, tenant_id=tenant_from_request(request))
+
+
+@router.post(
+    "/payment-integrity/cases/{case_id}/agent-findings",
+    response_model=PaymentIntegrityCaseRead,
+    tags=["Deployments"],
+    summary="Submit agent findings for a payment integrity case",
+    description="Stores AI findings for a case and optionally queues human review.",
+)
+def submit_payment_integrity_findings(
+    case_id: str,
+    payload: PaymentIntegrityFindingsCreate,
+    request: Request,
+    session: SessionDep,
+) -> PaymentIntegrityCaseORM:
+    case = payment_integrity_case_or_404(session, case_id, tenant_id=tenant_from_request(request))
+    if payload.risk_score is not None:
+        case.risk_score = payload.risk_score
+    if payload.risk_band is not None:
+        case.risk_band = payload.risk_band
+    case.automation_decision = payload.automation_decision
+    case.findings_json = {**case.findings_json, **payload.findings_json}
+    case.source_ids_json = list(dict.fromkeys([*case.source_ids_json, *payload.source_ids_json]))
+    case.last_action = "payment_integrity_case.agent_findings"
+    workflow = (
+        workflow_or_404(
+            session,
+            payload.workflow_run_id or case.workflow_run_id,
+            tenant_id=case.tenant_id,
+        )
+        if (payload.workflow_run_id or case.workflow_run_id)
+        else None
+    )
+    if payload.human_review_required:
+        case.status = "pending_human_review"
+        case.queue_status = "pending"
+        if workflow is not None:
+            workflow.review_required = True
+            workflow.status = "waiting_for_review"
+            workflow.current_step = "human_review"
+            create_review_queue_item(
+                session,
+                tenant_id=case.tenant_id,
+                workflow_run_id=workflow.id,
+                case_id=case.id,
+                priority="high" if (payload.risk_score or 0) >= 0.75 else "normal",
+                payload_json={
+                    "automation_decision": case.automation_decision,
+                    "findings_json": case.findings_json,
+                    "source_ids_json": case.source_ids_json,
+                },
+            )
+    else:
+        case.status = "decision_ready"
+    write_audit_event(
+        session,
+        tenant_id=case.tenant_id,
+        actor=actor_from_request(request, payload.actor),
+        action="payment_integrity_case.agent_findings_submitted",
+        target_type="payment_integrity_case",
+        target_id=case.id,
+        metadata={
+            "workflow_run_id": workflow.id if workflow else None,
+            "automation_decision": case.automation_decision,
+            "human_review_required": payload.human_review_required,
+        },
+    )
+    session.commit()
+    session.refresh(case)
+    return case
+
+
+@router.post(
+    "/payment-integrity/cases/{case_id}/resolve",
+    response_model=PaymentIntegrityCaseRead,
+    tags=["Deployments"],
+    summary="Resolve a payment integrity case",
+    description="Records the final case decision and closes the workflow loop.",
+)
+def resolve_payment_integrity_case(
+    case_id: str,
+    payload: PaymentIntegrityResolveRequest,
+    request: Request,
+    session: SessionDep,
+) -> PaymentIntegrityCaseORM:
+    case = payment_integrity_case_or_404(session, case_id, tenant_id=tenant_from_request(request))
+    case.final_decision = payload.final_decision
+    case.status = "closed"
+    case.last_action = "payment_integrity_case.resolved"
+    workflow = (
+        workflow_or_404(session, case.workflow_run_id, tenant_id=case.tenant_id)
+        if case.workflow_run_id
+        else None
+    )
+    if workflow is not None:
+        advance_workflow_run(
+            session,
+            workflow,
+            signal_type="case_closed",
+            signal_metadata={
+                "final_decision": payload.final_decision,
+                "rationale": payload.rationale,
+            },
+        )
+    write_audit_event(
+        session,
+        tenant_id=case.tenant_id,
+        actor=actor_from_request(request, payload.actor),
+        action="payment_integrity_case.resolved",
+        target_type="payment_integrity_case",
+        target_id=case.id,
+        metadata={
+            "final_decision": payload.final_decision,
+            "workflow_run_id": case.workflow_run_id,
+        },
+    )
+    session.commit()
+    session.refresh(case)
+    return case
 
 
 @router.get(
@@ -1003,8 +1896,8 @@ def get_approvals(session: SessionDep) -> list[ApprovalORM]:
     summary="List audit events",
     description="Lists audit events written by mutating control-plane operations.",
 )
-def get_audit_events(session: SessionDep) -> list[AuditEventORM]:
-    return list_records(session, AuditEventORM)
+def get_audit_events(request: Request, session: SessionDep) -> list[AuditEventORM]:
+    return list_records(session, AuditEventORM, tenant_id=tenant_from_request(request))
 
 
 @router.post(
@@ -1020,7 +1913,8 @@ def create_audit_event(
     request: Request,
     session: SessionDep,
 ) -> AuditEventORM:
-    event = AuditEventORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    event = AuditEventORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(event)
     publish_event_safely(
         request,
@@ -1034,6 +1928,7 @@ def create_audit_event(
                 "action": event.action,
                 "target_type": event.target_type,
                 "target_id": event.target_id,
+                "tenant_id": event.tenant_id,
                 "metadata_json": event.metadata_json,
             },
         ),
@@ -1056,11 +1951,13 @@ def create_prediction_event(
     request: Request,
     session: SessionDep,
 ) -> PredictionEventORM:
-    event = PredictionEventORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    event = PredictionEventORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(event)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request, "inference-service"),
         action="prediction_event.ingested",
         target_type="prediction_event",
@@ -1093,11 +1990,13 @@ def create_model_error_event(
     request: Request,
     session: SessionDep,
 ) -> ModelErrorEventORM:
-    event = ModelErrorEventORM(**payload.model_dump())
+    tenant_id = tenant_from_request(request, payload.tenant_id)
+    event = ModelErrorEventORM(**payload.model_dump(exclude={"tenant_id"}), tenant_id=tenant_id)
     session.add(event)
     session.flush()
     write_audit_event(
         session,
+        tenant_id=tenant_id,
         actor=actor_from_request(request, "inference-service"),
         action="model_error_event.ingested",
         target_type="model_error_event",
@@ -1124,13 +2023,14 @@ def create_model_error_event(
 )
 def get_prediction_events(
     model_name: str,
+    request: Request,
     session: SessionDep,
     model_version: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[PredictionEventORM]:
     return list(
         session.scalars(
-            monitoring_events_query(model_name, model_version)
+            monitoring_events_query(model_name, model_version, tenant_from_request(request))
             .order_by(PredictionEventORM.created_at.desc(), PredictionEventORM.id.desc())
             .limit(limit)
         )
@@ -1146,13 +2046,14 @@ def get_prediction_events(
 )
 def get_model_error_events(
     model_name: str,
+    request: Request,
     session: SessionDep,
     model_version: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[ModelErrorEventORM]:
     return list(
         session.scalars(
-            monitoring_error_events_query(model_name, model_version)
+            monitoring_error_events_query(model_name, model_version, tenant_from_request(request))
             .order_by(ModelErrorEventORM.created_at.desc(), ModelErrorEventORM.id.desc())
             .limit(limit)
         )
@@ -1168,11 +2069,15 @@ def get_model_error_events(
 )
 def get_monitoring_summary(
     model_name: str,
+    request: Request,
     session: SessionDep,
     model_version: str | None = Query(default=None),
 ) -> MonitoringSummaryResponse:
-    events = list(session.scalars(monitoring_events_query(model_name, model_version)))
-    error_events = list(session.scalars(monitoring_error_events_query(model_name, model_version)))
+    tenant_id = tenant_from_request(request)
+    events = list(session.scalars(monitoring_events_query(model_name, model_version, tenant_id)))
+    error_events = list(
+        session.scalars(monitoring_error_events_query(model_name, model_version, tenant_id))
+    )
     latency_values = [event.latency_ms for event in events] + [
         event.latency_ms for event in error_events
     ]
@@ -1183,7 +2088,10 @@ def get_monitoring_summary(
 
     latest_drift = session.scalars(
         select(DriftSnapshotORM)
-        .where(DriftSnapshotORM.model_name == model_name)
+        .where(
+            DriftSnapshotORM.tenant_id == tenant_id,
+            DriftSnapshotORM.model_name == model_name,
+        )
         .order_by(DriftSnapshotORM.created_at.desc(), DriftSnapshotORM.id.desc())
         .limit(1)
     ).first()
@@ -1244,6 +2152,52 @@ def get_monitoring_summary(
     )
 
 
+@router.get(
+    "/monitoring/rag/improvement-summary",
+    response_model=RagImprovementSummaryResponse,
+    tags=["Monitoring"],
+    summary="Summarize RAG improvement opportunities",
+    description=(
+        "Analyzes recent RAG traces and evaluation runs to recommend prompt, retrieval, "
+        "and deployment improvements."
+    ),
+)
+def get_rag_improvement_summary(
+    request: Request,
+    session: SessionDep,
+    lookback_hours: int = Query(default=168, ge=1, le=24 * 30),
+) -> RagImprovementSummaryResponse:
+    tenant_id = tenant_from_request(request)
+    cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
+    rag_events = list(
+        session.scalars(
+            select(AuditEventORM)
+            .where(
+                AuditEventORM.tenant_id == tenant_id,
+                AuditEventORM.action == "rag.query_answered",
+                AuditEventORM.created_at >= cutoff,
+            )
+            .order_by(AuditEventORM.created_at.desc(), AuditEventORM.id.desc())
+        )
+    )
+    evaluation_runs = list(
+        session.scalars(
+            select(EvaluationRunORM)
+            .where(
+                EvaluationRunORM.tenant_id == tenant_id,
+                EvaluationRunORM.target_type.in_(["rag", "rag_online"]),
+                EvaluationRunORM.created_at >= cutoff,
+            )
+            .order_by(EvaluationRunORM.created_at.desc(), EvaluationRunORM.id.desc())
+        )
+    )
+    summary = summarize_rag_improvements(
+        rag_events=rag_events,
+        evaluation_runs=evaluation_runs,
+    )
+    return RagImprovementSummaryResponse.model_validate(summary)
+
+
 @router.post(
     "/monitoring/models/{model_name}/drift-check",
     response_model=DriftCheckResponse,
@@ -1260,6 +2214,7 @@ def run_drift_check(
     request: Request,
     session: SessionDep,
 ) -> DriftCheckResponse:
+    tenant_id = tenant_from_request(request)
     if payload.red_threshold < payload.yellow_threshold:
         raise HTTPException(
             status_code=422,
@@ -1269,7 +2224,7 @@ def run_drift_check(
     cutoff = datetime.now(UTC) - timedelta(hours=payload.lookback_hours)
     recent_events = list(
         session.scalars(
-            monitoring_events_query(model_name)
+            monitoring_events_query(model_name, tenant_id=tenant_id)
             .where(PredictionEventORM.created_at >= cutoff)
             .order_by(PredictionEventORM.created_at.desc(), PredictionEventORM.id.desc())
         )
@@ -1280,7 +2235,7 @@ def run_drift_check(
             detail="Not enough recent prediction events for drift check",
         )
 
-    latest_model = latest_model_for_name(session, model_name)
+    latest_model = latest_model_for_name(session, model_name, tenant_id)
     model_version = (
         recent_events[0].model_version
         if recent_events
@@ -1338,6 +2293,7 @@ def run_drift_check(
     }
 
     snapshot = DriftSnapshotORM(
+        tenant_id=tenant_id,
         model_name=model_name,
         model_version=model_version,
         drift_status=drift_status,
@@ -1373,6 +2329,7 @@ def run_drift_check(
     )
     write_audit_event(
         session,
+        tenant_id=snapshot.tenant_id,
         actor="monitoring-job",
         action="drift_check.completed",
         target_type="model",

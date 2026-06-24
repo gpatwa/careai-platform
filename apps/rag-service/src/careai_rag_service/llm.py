@@ -25,6 +25,9 @@ class LLMProvider(ABC):
         retrieved_chunks: list[RetrievedChunk],
         safety_flags: list[str],
         correlation_id: str,
+        feedback_messages: list[str] | None = None,
+        attempt_number: int = 1,
+        retrieval_query: str | None = None,
     ) -> LLMResponse:
         raise NotImplementedError
 
@@ -38,6 +41,9 @@ class LocalMockChatProvider(LLMProvider):
         retrieved_chunks: list[RetrievedChunk],
         safety_flags: list[str],
         correlation_id: str,
+        feedback_messages: list[str] | None = None,
+        attempt_number: int = 1,
+        retrieval_query: str | None = None,
     ) -> LLMResponse:
         if not retrieved_chunks:
             return LLMResponse(
@@ -59,6 +65,11 @@ class LocalMockChatProvider(LLMProvider):
             answer_parts.append(
                 f"Related guidance from {second.title} says {summarize_excerpt(second.excerpt)} "
                 f"[{second.source_id}]"
+            )
+        if feedback_messages:
+            answer_parts.append(
+                "Verifier feedback applied: the answer is restricted to retrieved policy language "
+                "with explicit inline citations."
             )
         if safety_flags:
             answer_parts.append(
@@ -109,27 +120,42 @@ class AzureOpenAIChatProvider(LLMProvider):
         retrieved_chunks: list[RetrievedChunk],
         safety_flags: list[str],
         correlation_id: str,
+        feedback_messages: list[str] | None = None,
+        attempt_number: int = 1,
+        retrieval_query: str | None = None,
     ) -> LLMResponse:
         context = format_context(retrieved_chunks)
         prompt_text = prompt.template_text.format(question=question, context=context)
+        revision_message = None
+        if feedback_messages:
+            revision_message = (
+                "Verifier feedback for this retry:\n- " + "\n- ".join(feedback_messages)
+            )
         url = (
             f"{self.endpoint}/openai/deployments/{self.deployment}/chat/completions"
             f"?api-version={self.api_version}"
         )
-        payload = {
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Use only provided synthetic context. Return concise answers with "
-                        "inline citations using the source ids."
-                    ),
-                },
-                {"role": "user", "content": prompt_text},
-            ],
-            "temperature": 0.0,
-            "max_tokens": 500,
-        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Use only provided synthetic context. Return concise answers with "
+                    "inline citations using the source ids."
+                ),
+            }
+        ]
+        if revision_message:
+            messages.append({"role": "system", "content": revision_message})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Attempt: {attempt_number}\n"
+                    f"Retrieval query: {retrieval_query or question}\n\n{prompt_text}"
+                ),
+            }
+        )
+        payload = {"messages": messages, "temperature": 0.0, "max_tokens": 500}
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 url,

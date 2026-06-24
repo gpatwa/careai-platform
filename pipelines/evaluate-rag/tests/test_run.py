@@ -101,3 +101,4 @@ def test_run_evaluation_writes_report_with_thresholds(tmp_path: Path) -> None:
     assert saved["thresholds"]["keyword_relevance_min"] == 0.4
     assert saved["aggregate_metrics"]["retrieval_hit_rate"] == 1.0
     assert saved["passed"] is True
+    assert saved["improvement_recommendations"] == []

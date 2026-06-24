@@ -197,3 +197,55 @@ def test_prediction_event_persistence_drift_check_and_summary() -> None:
         "model_error_event.ingested",
         "drift_check.completed",
     } <= audit_actions
+
+
+def test_rag_improvement_summary_surfaces_loop_engineering_signals() -> None:
+    with make_client() as client:
+        response = client.post(
+            "/audit-events",
+            json={
+                "actor": "synthetic-user-001",
+                "action": "rag.query_answered",
+                "target_type": "rag_query",
+                "target_id": "corr-rag-001",
+                "correlation_id": "corr-rag-001",
+                "metadata_json": {
+                    "prompt_template_id": "prompt-001",
+                    "prompt_version": "v2",
+                    "retrieved_source_ids": ["prior_authorization_policy-0000"],
+                    "model_name": "local-rag",
+                    "provider": "local-mock",
+                    "safety_flags": ["verification_retry_used"],
+                    "human_review_required": False,
+                    "groundedness_score": 0.41,
+                    "fallback_mode": True,
+                    "attempt_count": 2,
+                    "verification_passed": False,
+                    "verification_flags": ["missing_inline_citations", "low_groundedness"],
+                },
+            },
+        )
+        assert response.status_code == 201
+
+        eval_response = client.post(
+            "/evaluations",
+            json={
+                "target_type": "rag",
+                "target_id": "prompt-001",
+                "metrics_json": {"groundedness": 0.41},
+                "passed": False,
+                "report_uri": "file:///tmp/rag-eval-report.json",
+            },
+        )
+        assert eval_response.status_code == 201
+
+        summary_response = client.get("/monitoring/rag/improvement-summary")
+
+    assert summary_response.status_code == 200
+    body = summary_response.json()
+    assert body["total_queries"] == 1
+    assert body["retry_rate"] == 1.0
+    assert body["verification_failure_rate"] == 1.0
+    assert body["failed_eval_count"] == 1
+    categories = {item["category"] for item in body["recommendations"]}
+    assert {"prompt_and_grader", "citation_policy", "provider_operations"} <= categories

@@ -3,11 +3,11 @@ from typing import Any
 
 from careai_common.events import LocalLoggingEventPublisher
 from careai_rag_service.audit import AuditClient
-from careai_rag_service.llm import LocalMockChatProvider
+from careai_rag_service.llm import LLMProvider, LLMResponse, LocalMockChatProvider
 from careai_rag_service.main import create_app
 from careai_rag_service.prompts import PromptRegistry
 from careai_rag_service.retrieval import LocalVectorRetriever, Retriever
-from careai_rag_service.schemas import RetrievedChunk
+from careai_rag_service.schemas import PromptTemplate, RetrievedChunk
 from fastapi.testclient import TestClient
 from ingest_rag.embeddings import LocalDeterministicEmbeddingProvider
 
@@ -35,6 +35,42 @@ class FixedRetriever(Retriever):
 
     def search(self, *, query: str, role: str, top_k: int) -> list[RetrievedChunk]:
         return self.chunks[:top_k]
+
+
+class RetryThenCiteProvider(LLMProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_answer(
+        self,
+        *,
+        question: str,
+        prompt: PromptTemplate,
+        retrieved_chunks: list[RetrievedChunk],
+        safety_flags: list[str],
+        correlation_id: str,
+        feedback_messages: list[str] | None = None,
+        attempt_number: int = 1,
+        retrieval_query: str | None = None,
+    ) -> LLMResponse:
+        self.calls += 1
+        if self.calls == 1:
+            return LLMResponse(
+                answer="Prior authorization requests require documentation and escalation.",
+                provider="retry-test",
+                model_name="retry-test-model",
+                fallback_mode=False,
+            )
+        source_id = retrieved_chunks[0].source_id
+        return LLMResponse(
+            answer=(
+                "Prior authorization requests require documentation and escalation "
+                f"when criteria are not met [{source_id}]."
+            ),
+            provider="retry-test",
+            model_name="retry-test-model",
+            fallback_mode=False,
+        )
 
 
 def app_with_fixed_retriever(retriever: Retriever | None = None):
@@ -140,6 +176,8 @@ def test_answer_contains_citations_and_metadata() -> None:
     assert body["provider_metadata"]["provider"] == "local-mock"
     assert body["prompt"]["prompt_version"] == "local-v1"
     assert body["correlation_id"] == "corr-rag-cited"
+    assert body["agent_loop"]["attempt_count"] == 1
+    assert body["agent_loop"]["verification_passed"] is True
 
 
 def test_rag_query_publishes_query_answered_event() -> None:
@@ -172,8 +210,95 @@ def test_rag_query_publishes_query_answered_event() -> None:
     assert event.payload["prompt_version"] == "local-v1"
     assert event.payload["retrieved_source_ids"] == ["prior_authorization_policy-0000"]
     assert event.payload["human_review_required"] is False
+    assert event.payload["attempt_count"] == 1
+    assert event.payload["verification_passed"] is True
+    assert event.payload["verification_flags"] == []
     assert "question" not in event.payload
     assert "answer" not in event.payload
+
+
+def test_rag_query_retries_when_verifier_rejects_first_answer() -> None:
+    provider = RetryThenCiteProvider()
+    app = create_app(
+        retriever=FixedRetriever(),
+        llm_provider=provider,
+        prompt_registry=PromptRegistry(None),
+        audit_client=AuditClient(None, enabled=False),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/rag/query",
+            json={
+                "user_id": "synthetic-user-001",
+                "role": "clinical_ops",
+                "question": "How should prior authorization requests be reviewed?",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert provider.calls == 2
+    assert body["agent_loop"]["attempt_count"] == 2
+    assert body["agent_loop"]["verification_passed"] is True
+    assert "verification_retry_used" in body["safety_flags"]
+    assert "missing_inline_citations" in body["agent_loop"]["attempts"][0]["verification_flags"]
+    assert body["agent_loop"]["attempts"][1]["verification_flags"] == []
+
+
+def test_rag_query_sends_workflow_signal(monkeypatch) -> None:
+    posts: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict, headers=None):
+            posts.append({"url": url, "json": json, "headers": headers})
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_rag_service.audit.httpx.Client", FakeClient)
+    app = create_app(
+        retriever=FixedRetriever(),
+        llm_provider=LocalMockChatProvider(),
+        prompt_registry=PromptRegistry(None),
+        audit_client=AuditClient("http://control-plane:8000", enabled=True),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/rag/query",
+            json={
+                "user_id": "synthetic-user-001",
+                "role": "clinical_ops",
+                "question": "How should prior authorization requests be reviewed?",
+                "tenant_id": "payer-acme",
+                "workflow_run_id": "workflow-001",
+                "payment_integrity_case_id": "pi-case-001",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tenant_id"] == "payer-acme"
+    assert body["workflow_run_id"] == "workflow-001"
+    workflow_post = next(
+        post
+        for post in posts
+        if "/workflow-runs/workflow-001/signals" in post["url"]
+    )
+    assert workflow_post["json"]["signal_type"] == "policy_answered"
+    assert workflow_post["headers"]["x-tenant-id"] == "payer-acme"
 
 
 def test_default_fallback_provider_is_local_mock() -> None:
@@ -258,9 +383,10 @@ def test_audit_client_sends_safe_metadata(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
+        def post(self, url: str, json: dict, headers=None):
             captured["url"] = url
             captured["json"] = json
+            captured["headers"] = headers
             return FakeResponse()
 
     monkeypatch.setattr("careai_rag_service.audit.httpx.Client", FakeClient)

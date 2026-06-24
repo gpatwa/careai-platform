@@ -13,10 +13,35 @@
 
 ## Service Boundaries
 
-- `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, and governance workflows. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, model error events, and drift snapshots through a FastAPI/SQLAlchemy service with Alembic migrations for persistent databases.
-- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, champion/challenger traffic-split simulation, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, `prediction.created` publication, and deterministic fallback scoring when no model is available.
-- `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, RAG-facing endpoints, and `rag.query_answered` publication without raw question or answer text.
+- `apps/control-plane-api`: orchestration, metadata, registry, promotion, monitoring, audit, governance workflows, tenant-aware workflow runs, review queue items, and Payment Integrity cases. It tracks dataset assets, model artifacts, deployments, prompt templates, evaluation runs, approvals, audit events, prediction events, model error events, drift snapshots, agent workflow state, human review handoffs, and synthetic payer case records through a FastAPI/SQLAlchemy service with Alembic migrations for persistent databases.
+- `apps/inference-service`: synthetic claims-risk inference with configurable local or MLflow model loading, champion/challenger traffic-split simulation, Pydantic feature validation, feature freshness checks, safe prediction audit and monitoring events, SLO-oriented error events, `prediction.created` publication, deterministic fallback scoring when no model is available, and optional workflow-signal emission into the control-plane runtime.
+- `apps/rag-service`: document ingestion, retrieval, prompt registry, safety checks, RAG-facing endpoints, a verifier-driven answer retry loop, `rag.query_answered` publication, and optional workflow-signal emission for policy reasoning steps without raw question or answer text.
 - `libs/common-python`: shared settings, JSON logging, correlation IDs, audit schemas, event schemas/publishers, observability helpers, and common errors.
+
+## Agent Workflow Runtime
+
+The control plane now includes a lightweight workflow runtime intended for payer-style agent orchestration. A `WorkflowRun` represents a bounded agent plan such as `payment_integrity_claim_review`. Each run records `tenant_id`, target business object, current step, status, structured inputs/outputs, reviewer assignment, and whether human review is required.
+
+Services advance runs by sending workflow signals. Example signals are `claims_risk_scored`, `policy_answered`, `human_review_completed`, and `case_closed`. This is intentionally simpler than a full DAG engine, but it demonstrates how reusable AI services can coordinate over a governed runtime instead of embedding workflow logic independently in each service.
+
+Human review is modeled with `ReviewQueueItem` records. When the workflow runtime sees high claims risk, missing grounding, or policy-driven escalation, it creates a queue item and moves the workflow into `waiting_for_review`. Review resolution feeds back into the workflow and closes the loop with auditability.
+
+Tenant-aware execution is part of the runtime contract. Requests can carry `x-tenant-id` or explicit tenant fields, and workflow, queue, and case records retain that tenant scope so customer-environment demos can show clean operational isolation.
+
+## Payment Integrity Demo Flow
+
+The concrete payer use case is a synthetic Payment Integrity case. A `PaymentIntegrityCase` captures synthetic claim, member, and provider identifiers, linked workflow state, automation findings, supporting source ids, queue status, and final decision.
+
+The intended demo path is:
+
+1. intake a synthetic claim case
+2. launch `payment_integrity_claim_review`
+3. score claim risk in `inference-service`
+4. retrieve policy context in `rag-service`
+5. escalate to human review when policy or risk thresholds require it
+6. resolve the case with an auditable final decision
+
+This aligns the platform more directly to payer operations by showing how models, retrieval, human review, and deployment safety fit into one governed workflow rather than remaining isolated technical capabilities.
 
 ## MLOps Pipeline
 
@@ -30,11 +55,11 @@ Synthetic policy and playbook documents live under `data/synthetic_docs`. Ingest
 
 Role-based retrieval is modeled as document-level filtering before prompt construction. Azure queries use `allowed_roles/any(...)` filters; the local fallback applies the same filter in process before scoring.
 
-`apps/rag-service` is the LLM gateway. It retrieves authorized chunks, selects an approved prompt from `control-plane-api` when available, otherwise uses a local default prompt, and routes generation to Azure OpenAI chat when configured or a deterministic local mock provider for tests and offline demos. Responses include citations, prompt version, provider metadata, retrieval metadata, groundedness score, safety flags, and the active correlation ID.
+`apps/rag-service` is the LLM gateway. It retrieves authorized chunks, selects an approved prompt from `control-plane-api` when available, otherwise uses a local default prompt, and routes generation to Azure OpenAI chat when configured or a deterministic local mock provider for tests and offline demos. The service now wraps generation in a lightweight agent loop: retrieve, generate, verify citations and groundedness, optionally retry once with verifier feedback, then return the final answer. Responses include citations, prompt version, provider metadata, retrieval metadata, agent-loop metadata, groundedness score, safety flags, and the active correlation ID.
 
 Safety controls reject prompt-injection and secret-exfiltration attempts before retrieval. Medical diagnosis or treatment requests are answered only as policy-context responses and flagged for human review. Audit events sent to the control plane include prompt id/version, retrieved source ids, model/provider metadata, role, and safety flags; raw question and answer text are intentionally excluded.
 
-RAG evaluation is the pre-promotion LLMOps gate. The evaluator measures retrieval hit rate, citation coverage, keyword relevance, groundedness, safety flag rate, disallowed-claim rate, latency, and provider token counts when available. Failed thresholds block promotion until the prompt, retrieval index, safety policy, or model configuration is reviewed.
+RAG evaluation is the pre-promotion LLMOps gate. The evaluator measures retrieval hit rate, citation coverage, keyword relevance, groundedness, safety flag rate, disallowed-claim rate, latency, and provider token counts when available. Failed thresholds block promotion until the prompt, retrieval index, safety policy, or model configuration is reviewed. The evaluation report now also emits deterministic improvement recommendations so offline evals can feed the same hill-climbing story as production traces.
 
 ## Governance
 
@@ -76,7 +101,7 @@ The mapping to Kafka/pub-sub is intentionally direct:
 - Schema version: compatibility boundary for producers and consumers.
 - Consumer group: each projection job, monitor, or retraining trigger reads independently.
 
-`careai-event-consumer` is the local projection job. It reads the JSONL stream once and materializes operational views into PostgreSQL or SQLite: `prediction.created` becomes `PredictionEvent`, `model.drift_detected` becomes `DriftSnapshot`, and governance/RAG/feedback events become safe `AuditEvent` rows. In Azure, the same pattern would run as an Azure Container Apps Job or Function subscribed to Event Hubs consumer groups. Downstream extensions can add retraining triggers, drift-alert notifications, human-feedback aggregation, or feature-store refreshes without coupling producers to those workflows.
+`careai-event-consumer` is the local projection job. It reads the JSONL stream once and materializes operational views into PostgreSQL or SQLite: `prediction.created` becomes `PredictionEvent`, `model.drift_detected` becomes `DriftSnapshot`, and governance/RAG/feedback events become safe `AuditEvent` rows. Low-quality `rag.query_answered` traces now also create lightweight online `EvaluationRun` records and improvement-candidate audit events, which makes the event backbone part of a real hill-climbing loop instead of a passive log sink. In Azure, the same pattern would run as an Azure Container Apps Job or Function subscribed to Event Hubs consumer groups. Downstream extensions can add retraining triggers, drift-alert notifications, human-feedback aggregation, or feature-store refreshes without coupling producers to those workflows.
 
 ## Cloud Target
 

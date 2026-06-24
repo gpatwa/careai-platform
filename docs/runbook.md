@@ -148,6 +148,8 @@ If `data/local/rag-index.json` is missing, the service builds it from `data/synt
 
 Check `safety_flags`, `human_review_required`, `groundedness_score`, and `citations` on every response. Prompt-injection or secret requests should return HTTP 400. Diagnosis or treatment questions should set the human-review flag. Control-plane audit events should contain prompt/template metadata and source ids, not raw question or answer text.
 
+For loop-engineering behavior, also inspect `agent_loop.attempt_count`, `agent_loop.verification_passed`, and per-attempt `verification_flags`. A retry with verifier feedback is expected for borderline answers and is a good interview talking point.
+
 ## RAG Evaluation
 
 Run the GenAI evaluation gate against the local RAG gateway:
@@ -159,6 +161,12 @@ python -m evaluate_rag.run \
 ```
 
 The report is written to `data/local/rag-eval-report.json` by default. Review `retrieval_hit_rate`, `citation_coverage`, `keyword_relevance`, `groundedness`, `safety_flag_rate`, `disallowed_claim_rate`, and latency metrics before promoting prompt or retrieval changes. If the control plane URL is configured, the same aggregate metrics are posted to `/evaluations`.
+
+To inspect the production-style hill-climbing view from live traces:
+
+```bash
+curl http://localhost:8000/monitoring/rag/improvement-summary
+```
 
 ## Governance Gates
 

@@ -9,7 +9,13 @@ from careai_common.events import EventEnvelope, read_local_event_stream
 from sqlalchemy.orm import Session
 
 from careai_control_plane_api.database import Database
-from careai_control_plane_api.models import AuditEventORM, DriftSnapshotORM, PredictionEventORM
+from careai_control_plane_api.improvement import recommendations_from_rag_event_metadata
+from careai_control_plane_api.models import (
+    AuditEventORM,
+    DriftSnapshotORM,
+    EvaluationRunORM,
+    PredictionEventORM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,30 +146,66 @@ def _consume_model_promotion_requested(session: Session, event: EventEnvelope) -
 
 def _consume_rag_query_answered(session: Session, event: EventEnvelope) -> None:
     payload = event.payload
+    tenant_id = str(payload.get("tenant_id", "default"))
+    metadata = _metadata_with_event_id(
+        event,
+        {
+            "role": payload["role"],
+            "prompt_template_id": payload["prompt_template_id"],
+            "prompt_version": payload["prompt_version"],
+            "retrieved_source_ids": payload.get("retrieved_source_ids", []),
+            "model_name": payload["model_name"],
+            "provider": payload["provider"],
+            "safety_flags": payload.get("safety_flags", []),
+            "human_review_required": payload["human_review_required"],
+            "groundedness_score": payload["groundedness_score"],
+            "fallback_mode": payload.get("fallback_mode", False),
+            "attempt_count": payload.get("attempt_count", 1),
+            "verification_passed": payload.get("verification_passed", True),
+            "verification_flags": payload.get("verification_flags", []),
+        },
+    )
     session.add(
         AuditEventORM(
+            tenant_id=tenant_id,
             actor=str(payload["user_id"]),
             action="rag.query_answered",
             target_type="rag_query",
             target_id=event.correlation_id,
             correlation_id=event.correlation_id,
-            metadata_json=_metadata_with_event_id(
-                event,
-                {
-                    "role": payload["role"],
-                    "prompt_template_id": payload["prompt_template_id"],
-                    "prompt_version": payload["prompt_version"],
-                    "retrieved_source_ids": payload.get("retrieved_source_ids", []),
-                    "model_name": payload["model_name"],
-                    "provider": payload["provider"],
-                    "safety_flags": payload.get("safety_flags", []),
-                    "human_review_required": payload["human_review_required"],
-                    "groundedness_score": payload["groundedness_score"],
-                    "fallback_mode": payload.get("fallback_mode", False),
-                },
-            ),
+            metadata_json=metadata,
         )
     )
+    if not payload.get("verification_passed", True):
+        session.add(
+            EvaluationRunORM(
+                tenant_id=tenant_id,
+                target_type="rag_online",
+                target_id=str(payload["prompt_template_id"]),
+                metrics_json={
+                    "correlation_id": event.correlation_id,
+                    "prompt_version": payload["prompt_version"],
+                    "groundedness_score": payload["groundedness_score"],
+                    "attempt_count": payload.get("attempt_count", 1),
+                    "verification_flags": payload.get("verification_flags", []),
+                    "safety_flags": payload.get("safety_flags", []),
+                },
+                passed=False,
+                report_uri=f"event://rag_query/{event.correlation_id}",
+            )
+        )
+    for item in recommendations_from_rag_event_metadata(metadata):
+        session.add(
+            AuditEventORM(
+                tenant_id=tenant_id,
+                actor="control-plane-api",
+                action="rag.improvement_candidate_detected",
+                target_type="prompt",
+                target_id=str(payload["prompt_template_id"]),
+                correlation_id=event.correlation_id,
+                metadata_json=_metadata_with_event_id(event, item),
+            )
+        )
 
 
 def _consume_feedback_received(session: Session, event: EventEnvelope) -> None:

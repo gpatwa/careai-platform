@@ -9,7 +9,7 @@ import httpx
 
 from evaluate_rag.client import RagGatewayClient
 from evaluate_rag.metrics import aggregate_metrics, evaluate_item, report_passed
-from evaluate_rag.models import EvalItem, EvaluationReport, Thresholds
+from evaluate_rag.models import AggregateMetrics, EvalItem, EvaluationReport, Thresholds
 
 DEFAULT_EVAL_SET = Path("data/eval/rag_eval_set.jsonl")
 DEFAULT_REPORT_PATH = Path("data/local/rag-eval-report.json")
@@ -54,6 +54,7 @@ def run_evaluation(
         aggregate_metrics=aggregate,
         passed=report_passed(aggregate, thresholds),
         item_results=item_results,
+        improvement_recommendations=improvement_recommendations(aggregate, thresholds),
     )
 
     output_path = write_report(report, output)
@@ -129,6 +130,70 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--disallowed-claim-rate-max", type=float, default=0.0)
     parser.add_argument("--avg-latency-ms-max", type=int, default=3000)
     return parser
+
+
+def improvement_recommendations(
+    aggregate: AggregateMetrics,
+    thresholds: Thresholds,
+) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    if aggregate.retrieval_hit_rate < thresholds.retrieval_hit_rate_min:
+        recommendations.append(
+            {
+                "category": "retrieval",
+                "message": (
+                    "Retrieval hit rate is below threshold. Revisit chunking, "
+                    "metadata filters, or top-k selection."
+                ),
+                "evidence": {
+                    "retrieval_hit_rate": aggregate.retrieval_hit_rate,
+                    "threshold": thresholds.retrieval_hit_rate_min,
+                },
+            }
+        )
+    if aggregate.citation_coverage < thresholds.citation_coverage_min:
+        recommendations.append(
+            {
+                "category": "citations",
+                "message": (
+                    "Citation coverage is below threshold. Tighten prompt "
+                    "instructions and keep verifier retries enabled."
+                ),
+                "evidence": {
+                    "citation_coverage": aggregate.citation_coverage,
+                    "threshold": thresholds.citation_coverage_min,
+                },
+            }
+        )
+    if aggregate.groundedness < thresholds.groundedness_min:
+        recommendations.append(
+            {
+                "category": "groundedness",
+                "message": (
+                    "Groundedness is below threshold. Constrain answers more "
+                    "tightly to retrieved context."
+                ),
+                "evidence": {
+                    "groundedness": aggregate.groundedness,
+                    "threshold": thresholds.groundedness_min,
+                },
+            }
+        )
+    if aggregate.safety_flag_rate > thresholds.safety_flag_rate_max:
+        recommendations.append(
+            {
+                "category": "safety",
+                "message": (
+                    "Safety flag rate is above threshold. Review prompt injection "
+                    "handling and medical handoff rules."
+                ),
+                "evidence": {
+                    "safety_flag_rate": aggregate.safety_flag_rate,
+                    "threshold": thresholds.safety_flag_rate_max,
+                },
+            }
+        )
+    return recommendations
 
 
 def main(argv: list[str] | None = None) -> int:
