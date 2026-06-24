@@ -37,6 +37,7 @@ Show the Overview page and the architecture diagram in `README.md`.
 Walk the boundaries:
 
 - Control plane tracks datasets, models, deployments, prompt templates, evaluations, approvals, model cards, prompt cards, audit events, prediction events, drift snapshots, and rollback health.
+- The same control plane now hosts a lightweight workflow runtime for payer operations, plus tenant-scoped review queue items and Payment Integrity cases so the demo shows orchestration, not just registries.
 - Inference service serves the synthetic claims-risk API with validation, feature checks, audit events, monitoring events, fallback scoring, and champion/challenger routing metadata.
 - RAG service retrieves from Azure AI Search when configured or a local JSON vector index otherwise, then applies prompt registry, safety checks, citations, and audit logging.
 - MLflow stores experiment runs and model artifacts.
@@ -122,6 +123,8 @@ Highlight:
 
 Reinforce that logs and audit events avoid raw PHI/PII-like values.
 
+Then connect it to the workflow story: the same request can carry `tenant_id`, `workflow_run_id`, and `payment_integrity_case_id`, so the inference service can emit a `claims_risk_scored` signal back into the control plane instead of becoming a dead-end API.
+
 ### 6:15-7:00 Monitoring and Drift
 
 Open Monitoring and Audit.
@@ -134,6 +137,8 @@ Explain:
 - Rollback triggers are tied to error rate, latency, and red drift status.
 
 Use this language: monitoring is not just charts; it is part of the release safety loop.
+
+If you want one concrete payer moment here, open Governance after a high-risk scoring plus policy retrieval path and show that the workflow moved into `waiting_for_review`, created a human review queue item, and retained a tenant-scoped case record end to end.
 
 ### 7:00-8:15 RAG Query With Citations and Safety
 

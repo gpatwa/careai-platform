@@ -20,11 +20,13 @@
 
 ## Agent Workflow Runtime
 
-The control plane now includes a lightweight workflow runtime intended for payer-style agent orchestration. A `WorkflowRun` represents a bounded agent plan such as `payment_integrity_claim_review`. Each run records `tenant_id`, target business object, current step, status, structured inputs/outputs, reviewer assignment, and whether human review is required.
+The control plane now includes a lightweight workflow runtime intended for payer-style agent orchestration. A `WorkflowRun` represents a bounded agent plan such as `payment_integrity_claim_review` or `prompt_self_optimization`. Each run records `tenant_id`, target business object, current step, status, structured inputs/outputs, reviewer assignment, whether human review is required, and planner metadata for autonomous execution.
 
-Services advance runs by sending workflow signals. Example signals are `claims_risk_scored`, `policy_answered`, `human_review_completed`, and `case_closed`. This is intentionally simpler than a full DAG engine, but it demonstrates how reusable AI services can coordinate over a governed runtime instead of embedding workflow logic independently in each service.
+Services advance runs by sending workflow signals. Example signals are `claims_risk_scored`, `policy_answered`, `human_review_completed`, and `case_closed`. The runtime now also supports an autonomous planner that selects the next tool for a workflow, executes bounded steps, and reschedules due runs through a background job. This is intentionally simpler than a full DAG engine, but it demonstrates how reusable AI services can coordinate over a governed runtime instead of embedding workflow logic independently in each service.
 
 Human review is modeled with `ReviewQueueItem` records. When the workflow runtime sees high claims risk, missing grounding, or policy-driven escalation, it creates a queue item and moves the workflow into `waiting_for_review`. Review resolution feeds back into the workflow and closes the loop with auditability.
+
+Prompt optimization is modeled as a governed planner workflow rather than a hidden mutation. The planner can analyze improvement signals, generate a candidate prompt version, create an evaluation record, and either stop for governance review or auto-deploy only when explicit self-approval flags were set at workflow creation time.
 
 Tenant-aware execution is part of the runtime contract. Requests can carry `x-tenant-id` or explicit tenant fields, and workflow, queue, and case records retain that tenant scope so customer-environment demos can show clean operational isolation.
 

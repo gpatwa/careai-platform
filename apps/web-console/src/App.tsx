@@ -106,6 +106,63 @@ type EvaluationRun = {
   created_at: string;
 };
 
+type WorkflowRun = {
+  id: string;
+  tenant_id: string;
+  workflow_type: string;
+  target_type: string;
+  target_id: string;
+  status: string;
+  current_step: string;
+  requested_by: string;
+  assigned_reviewer?: string | null;
+  review_required: boolean;
+  steps_json: Array<Record<string, unknown>>;
+  input_json: Record<string, unknown>;
+  output_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+type ReviewQueueItem = {
+  id: string;
+  tenant_id: string;
+  workflow_run_id: string;
+  case_id?: string | null;
+  queue_name: string;
+  review_type: string;
+  priority: string;
+  status: string;
+  assigned_to?: string | null;
+  decision?: string | null;
+  rationale: string;
+  payload_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+type PaymentIntegrityCase = {
+  id: string;
+  tenant_id: string;
+  claim_id_synthetic: string;
+  member_id_synthetic: string;
+  provider_id_synthetic: string;
+  policy_doc_id: string;
+  workflow_run_id?: string | null;
+  status: string;
+  queue_status: string;
+  risk_score?: number | null;
+  risk_band?: string | null;
+  automation_decision: string;
+  final_decision?: string | null;
+  assigned_reviewer?: string | null;
+  findings_json: Record<string, unknown>;
+  source_ids_json: string[];
+  last_action: string;
+  created_at: string;
+  updated_at: string;
+};
+
 type MonitoringSummary = {
   model_name: string;
   event_count: number;
@@ -150,6 +207,7 @@ type RagResponse = {
 };
 
 type PlatformData = {
+  tenantId: string;
   models: ModelArtifact[];
   deployments: Deployment[];
   auditEvents: AuditEvent[];
@@ -158,12 +216,16 @@ type PlatformData = {
   modelCards: ModelCard[];
   promptCards: PromptCard[];
   evaluations: EvaluationRun[];
+  workflowRuns: WorkflowRun[];
+  reviewQueueItems: ReviewQueueItem[];
+  paymentIntegrityCases: PaymentIntegrityCase[];
   monitoring: MonitoringSummary;
 };
 
 type ApiConfig = {
   controlPlaneUrl: string;
   ragUrl: string;
+  tenantId: string;
 };
 
 const pages: { key: PageKey; label: string }[] = [
@@ -187,15 +249,18 @@ const stageFlow: ModelStage[] = [
 const config: ApiConfig = {
   controlPlaneUrl:
     import.meta.env.VITE_CONTROL_PLANE_API_URL ?? import.meta.env.VITE_API_BASE_URL ?? "",
-  ragUrl: import.meta.env.VITE_RAG_SERVICE_URL ?? ""
+  ragUrl: import.meta.env.VITE_RAG_SERVICE_URL ?? "",
+  tenantId: import.meta.env.VITE_DEFAULT_TENANT_ID ?? "payer-demo"
 };
 
 const resolvedConfig: ApiConfig = {
   controlPlaneUrl: config.controlPlaneUrl || "http://localhost:8000",
-  ragUrl: config.ragUrl || "http://localhost:8002"
+  ragUrl: config.ragUrl || "http://localhost:8002",
+  tenantId: config.tenantId || "payer-demo"
 };
 
 const mockData: PlatformData = {
+  tenantId: "payer-demo",
   models: [
     {
       id: "model-claims-risk-001",
@@ -401,6 +466,84 @@ const mockData: PlatformData = {
       created_at: "2026-06-15T07:18:00Z"
     }
   ],
+  workflowRuns: [
+    {
+      id: "workflow-pi-001",
+      tenant_id: "payer-demo",
+      workflow_type: "payment_integrity_claim_review",
+      target_type: "payment_integrity_case",
+      target_id: "pi-case-001",
+      status: "waiting_for_review",
+      current_step: "human_review",
+      requested_by: "payment-integrity-ops",
+      assigned_reviewer: "clinical-reviewer-01",
+      review_required: true,
+      steps_json: [
+        { name: "intake", kind: "system" },
+        { name: "claims_risk_scoring", kind: "model" },
+        { name: "policy_retrieval", kind: "rag" },
+        { name: "human_review", kind: "human" },
+        { name: "decision", kind: "system" }
+      ],
+      input_json: { claim_id_synthetic: "claim-synth-001", policy_doc_id: "claims_review_policy" },
+      output_json: {
+        claims_risk: { prediction_score: 0.81, risk_band: "high" },
+        policy_answer: {
+          retrieved_source_ids: ["claims_review_policy-0000"],
+          human_review_required: true
+        }
+      },
+      created_at: "2026-06-15T07:08:00Z",
+      updated_at: "2026-06-15T07:14:00Z"
+    }
+  ],
+  reviewQueueItems: [
+    {
+      id: "review-queue-001",
+      tenant_id: "payer-demo",
+      workflow_run_id: "workflow-pi-001",
+      case_id: "pi-case-001",
+      queue_name: "medical-claims-review",
+      review_type: "human_validation",
+      priority: "high",
+      status: "assigned",
+      assigned_to: "clinical-reviewer-01",
+      decision: null,
+      rationale: "",
+      payload_json: {
+        automation_decision: "escalate_for_manual_review",
+        source_ids_json: ["claims_review_policy-0000"]
+      },
+      created_at: "2026-06-15T07:12:00Z",
+      updated_at: "2026-06-15T07:13:00Z"
+    }
+  ],
+  paymentIntegrityCases: [
+    {
+      id: "pi-case-001",
+      tenant_id: "payer-demo",
+      claim_id_synthetic: "claim-synth-001",
+      member_id_synthetic: "member-synth-108",
+      provider_id_synthetic: "provider-synth-042",
+      policy_doc_id: "claims_review_policy",
+      workflow_run_id: "workflow-pi-001",
+      status: "pending_human_review",
+      queue_status: "assigned",
+      risk_score: 0.81,
+      risk_band: "high",
+      automation_decision: "escalate_for_manual_review",
+      final_decision: null,
+      assigned_reviewer: "clinical-reviewer-01",
+      findings_json: {
+        claims_risk: { prediction_score: 0.81, reason_codes: ["HIGH_SCORE_THRESHOLD"] },
+        policy_review: { groundedness_score: 1, retrieved_source_ids: ["claims_review_policy-0000"] }
+      },
+      source_ids_json: ["claims_review_policy-0000"],
+      last_action: "human_review_required",
+      created_at: "2026-06-15T07:07:00Z",
+      updated_at: "2026-06-15T07:14:00Z"
+    }
+  ],
   monitoring: {
     model_name: "claims-risk",
     event_count: 128,
@@ -439,7 +582,7 @@ export function App() {
         setData(loaded);
         setSelectedModelId(loaded.models[0]?.id ?? "");
         setLoadState("live");
-        setStatusMessage("Connected to local APIs.");
+        setStatusMessage(`Connected to APIs for tenant ${loaded.tenantId}.`);
       } catch (error) {
         if (cancelled) return;
         setData(mockData);
@@ -482,7 +625,8 @@ export function App() {
             stage: nextStage,
             actor: "web-console",
             notes: "Interview demo promotion from web console."
-          }
+          },
+          resolvedConfig.tenantId
         );
         setData((current) => ({
           ...current,
@@ -523,8 +667,9 @@ export function App() {
         user_id: "web-console-demo-user",
         role: ragRole,
         question: ragQuestion,
-        top_k: 4
-      });
+        top_k: 4,
+        tenant_id: resolvedConfig.tenantId
+      }, resolvedConfig.tenantId);
       setRagResponse(response);
     } catch {
       setRagError("RAG API unavailable; showing local mock response.");
@@ -540,6 +685,7 @@ export function App() {
         <div>
           <p className="eyebrow">Enterprise MLOps + LLMOps</p>
           <h1>careAI Platform</h1>
+          <p className="tenant-banner">Tenant: {data.tenantId}</p>
         </div>
         <div className={`connection connection-${loadState}`}>
           <span>{loadState.toUpperCase()}</span>
@@ -568,8 +714,11 @@ export function App() {
           auditEvents={data.auditEvents}
           deployments={data.deployments}
           monitoring={data.monitoring}
+          paymentIntegrityCases={data.paymentIntegrityCases}
           ragEvaluation={ragEvaluation}
+          reviewQueueItems={data.reviewQueueItems}
           stageCounts={stageCounts}
+          workflowRuns={data.workflowRuns}
         />
       ) : null}
       {page === "models" ? (
@@ -603,8 +752,11 @@ export function App() {
           evaluations={data.evaluations}
           modelCards={data.modelCards}
           models={data.models}
+          paymentIntegrityCases={data.paymentIntegrityCases}
           promptCards={data.promptCards}
           prompts={data.prompts}
+          reviewQueueItems={data.reviewQueueItems}
+          workflowRuns={data.workflowRuns}
         />
       ) : null}
     </main>
@@ -615,14 +767,21 @@ function OverviewPage({
   auditEvents,
   deployments,
   monitoring,
+  paymentIntegrityCases,
   ragEvaluation,
+  reviewQueueItems,
   stageCounts
+  ,
+  workflowRuns
 }: {
   auditEvents: AuditEvent[];
   deployments: Deployment[];
   monitoring: MonitoringSummary;
+  paymentIntegrityCases: PaymentIntegrityCase[];
   ragEvaluation?: EvaluationRun;
+  reviewQueueItems: ReviewQueueItem[];
   stageCounts: Record<ModelStage, number>;
+  workflowRuns: WorkflowRun[];
 }) {
   return (
     <section className="page-grid overview-grid">
@@ -654,6 +813,11 @@ function OverviewPage({
           <Metric label="Drift" value={monitoring.latest_drift_status ?? "unknown"} />
           <Metric label="Predictions" value={monitoring.event_count.toString()} />
           <Metric label="P95 latency" value={formatMs(monitoring.p95_latency_ms)} />
+          <Metric label="Workflow runs" value={workflowRuns.length.toString()} />
+          <Metric
+            label="Queued reviews"
+            value={reviewQueueItems.filter((item) => item.status !== "completed").length.toString()}
+          />
         </div>
       </Panel>
 
@@ -681,6 +845,20 @@ function OverviewPage({
 
       <Panel title="Recent Audit Events" wide>
         <AuditTable events={auditEvents.slice(0, 5)} />
+      </Panel>
+
+      <Panel title="Payment Integrity Cases" wide>
+        <DataTable
+          columns={["Claim", "Risk", "Automation", "Queue", "Reviewer", "Status"]}
+          rows={paymentIntegrityCases.map((caseItem) => [
+            caseItem.claim_id_synthetic,
+            caseItem.risk_band ?? "unknown",
+            caseItem.automation_decision,
+            caseItem.queue_status,
+            caseItem.assigned_reviewer ?? "unassigned",
+            caseItem.status
+          ])}
+        />
       </Panel>
     </section>
   );
@@ -961,16 +1139,23 @@ function GovernancePage({
   evaluations,
   modelCards,
   models,
+  paymentIntegrityCases,
   promptCards,
   prompts
+  ,
+  reviewQueueItems,
+  workflowRuns
 }: {
   approvals: Approval[];
   auditEvents: AuditEvent[];
   evaluations: EvaluationRun[];
   modelCards: ModelCard[];
   models: ModelArtifact[];
+  paymentIntegrityCases: PaymentIntegrityCase[];
   promptCards: PromptCard[];
   prompts: PromptTemplate[];
+  reviewQueueItems: ReviewQueueItem[];
+  workflowRuns: WorkflowRun[];
 }) {
   const approvalsByTarget = new Set(
     approvals
@@ -1067,6 +1252,46 @@ function GovernancePage({
             evaluation.target_type,
             evaluation.passed ? "yes" : "no",
             evaluation.report_uri
+          ])}
+        />
+      </Panel>
+
+      <Panel title="Workflow Runs" wide>
+        <DataTable
+          columns={["Workflow", "Target", "Step", "Status", "Review", "Reviewer"]}
+          rows={workflowRuns.map((run) => [
+            run.workflow_type,
+            `${run.target_type}:${run.target_id}`,
+            run.current_step,
+            run.status,
+            run.review_required ? "required" : "not required",
+            run.assigned_reviewer ?? "unassigned"
+          ])}
+        />
+      </Panel>
+
+      <Panel title="Human Review Queue">
+        <DataTable
+          columns={["Queue", "Priority", "Status", "Assigned", "Case"]}
+          rows={reviewQueueItems.map((item) => [
+            item.queue_name,
+            item.priority,
+            item.status,
+            item.assigned_to ?? "unassigned",
+            item.case_id ?? "none"
+          ])}
+        />
+      </Panel>
+
+      <Panel title="Payment Integrity Case Flow">
+        <DataTable
+          columns={["Claim", "Policy", "Workflow", "Automation", "Decision"]}
+          rows={paymentIntegrityCases.map((caseItem) => [
+            caseItem.claim_id_synthetic,
+            caseItem.policy_doc_id,
+            caseItem.workflow_run_id ?? "none",
+            caseItem.automation_decision,
+            caseItem.final_decision ?? "pending"
           ])}
         />
       </Panel>
@@ -1184,23 +1409,37 @@ async function loadPlatformData(apiConfig: ApiConfig): Promise<PlatformData> {
     prompts,
     modelCards,
     promptCards,
-    evaluations
+    evaluations,
+    workflowRuns,
+    reviewQueueItems,
+    paymentIntegrityCases
   ] = await Promise.all([
-    fetchJson<ModelArtifact[]>(`${apiConfig.controlPlaneUrl}/models`),
-    fetchJson<Deployment[]>(`${apiConfig.controlPlaneUrl}/deployments`),
-    fetchJson<AuditEvent[]>(`${apiConfig.controlPlaneUrl}/audit-events`),
-    fetchJson<Approval[]>(`${apiConfig.controlPlaneUrl}/approvals`),
-    fetchJson<PromptTemplate[]>(`${apiConfig.controlPlaneUrl}/prompts`),
-    fetchJson<ModelCard[]>(`${apiConfig.controlPlaneUrl}/model-cards`),
-    fetchJson<PromptCard[]>(`${apiConfig.controlPlaneUrl}/prompt-cards`),
-    fetchJson<EvaluationRun[]>(`${apiConfig.controlPlaneUrl}/evaluations`)
+    fetchJson<ModelArtifact[]>(`${apiConfig.controlPlaneUrl}/models`, apiConfig.tenantId),
+    fetchJson<Deployment[]>(`${apiConfig.controlPlaneUrl}/deployments`, apiConfig.tenantId),
+    fetchJson<AuditEvent[]>(`${apiConfig.controlPlaneUrl}/audit-events`, apiConfig.tenantId),
+    fetchJson<Approval[]>(`${apiConfig.controlPlaneUrl}/approvals`, apiConfig.tenantId),
+    fetchJson<PromptTemplate[]>(`${apiConfig.controlPlaneUrl}/prompts`, apiConfig.tenantId),
+    fetchJson<ModelCard[]>(`${apiConfig.controlPlaneUrl}/model-cards`, apiConfig.tenantId),
+    fetchJson<PromptCard[]>(`${apiConfig.controlPlaneUrl}/prompt-cards`, apiConfig.tenantId),
+    fetchJson<EvaluationRun[]>(`${apiConfig.controlPlaneUrl}/evaluations`, apiConfig.tenantId),
+    fetchJson<WorkflowRun[]>(`${apiConfig.controlPlaneUrl}/workflow-runs`, apiConfig.tenantId),
+    fetchJson<ReviewQueueItem[]>(
+      `${apiConfig.controlPlaneUrl}/review-queue/items`,
+      apiConfig.tenantId
+    ),
+    fetchJson<PaymentIntegrityCase[]>(
+      `${apiConfig.controlPlaneUrl}/payment-integrity/cases`,
+      apiConfig.tenantId
+    )
   ]);
   const modelName = models.find((model) => model.stage === "production")?.name ?? "claims-risk";
   const monitoring = await fetchJson<MonitoringSummary>(
-    `${apiConfig.controlPlaneUrl}/monitoring/models/${encodeURIComponent(modelName)}/summary`
+    `${apiConfig.controlPlaneUrl}/monitoring/models/${encodeURIComponent(modelName)}/summary`,
+    apiConfig.tenantId
   ).catch(() => mockData.monitoring);
 
   return {
+    tenantId: apiConfig.tenantId,
     models: models.length ? models : mockData.models,
     deployments: deployments.length ? deployments : mockData.deployments,
     auditEvents: auditEvents.length ? auditEvents : mockData.auditEvents,
@@ -1209,22 +1448,31 @@ async function loadPlatformData(apiConfig: ApiConfig): Promise<PlatformData> {
     modelCards: modelCards.length ? modelCards : mockData.modelCards,
     promptCards: promptCards.length ? promptCards : mockData.promptCards,
     evaluations: evaluations.length ? evaluations : mockData.evaluations,
+    workflowRuns: workflowRuns.length ? workflowRuns : mockData.workflowRuns,
+    reviewQueueItems: reviewQueueItems.length ? reviewQueueItems : mockData.reviewQueueItems,
+    paymentIntegrityCases:
+      paymentIntegrityCases.length ? paymentIntegrityCases : mockData.paymentIntegrityCases,
     monitoring
   };
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function fetchJson<T>(url: string, tenantId?: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: tenantId ? { "x-tenant-id": tenantId } : undefined
+  });
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response));
   }
   return response.json() as Promise<T>;
 }
 
-async function postJson<T>(url: string, payload: unknown): Promise<T> {
+async function postJson<T>(url: string, payload: unknown, tenantId?: string): Promise<T> {
   const response = await fetch(url, {
     body: JSON.stringify(payload),
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(tenantId ? { "x-tenant-id": tenantId } : {})
+    },
     method: "POST"
   });
   if (!response.ok) {

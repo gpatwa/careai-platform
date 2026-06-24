@@ -57,6 +57,30 @@ variable "container_image_tags" {
   }
 }
 
+variable "claims_risk_model_uri" {
+  description = "Optional Azure Blob or local URI for the serialized claims-risk model artifact used by inference."
+  type        = string
+  default     = ""
+}
+
+variable "claims_risk_model_metadata_path" {
+  description = "Optional Azure Blob or local path for the claims-risk model metadata JSON."
+  type        = string
+  default     = ""
+}
+
+variable "default_tenant_id" {
+  description = "Default tenant identifier exposed to services for customer-environment demos."
+  type        = string
+  default     = "payer-demo"
+}
+
+variable "tenant_mode" {
+  description = "Tenant operating mode for local or Azure demos, such as single or multi."
+  type        = string
+  default     = "single"
+}
+
 variable "enable_postgres" {
   description = "Create Azure Database for PostgreSQL Flexible Server and wire the control plane to it."
   type        = bool

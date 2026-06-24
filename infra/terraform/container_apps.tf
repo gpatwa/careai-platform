@@ -53,6 +53,16 @@ resource "azurerm_container_app" "control_plane" {
         value = "8000"
       }
 
+      env {
+        name  = "DEFAULT_TENANT_ID"
+        value = var.default_tenant_id
+      }
+
+      env {
+        name  = "TENANT_MODE"
+        value = var.tenant_mode
+      }
+
       dynamic "env" {
         for_each = var.enable_postgres ? [1] : []
         content {
@@ -69,6 +79,11 @@ resource "azurerm_container_app" "control_plane" {
       env {
         name  = "AZURE_STORAGE_ACCOUNT_NAME"
         value = azurerm_storage_account.this.name
+      }
+
+      env {
+        name  = "AZURE_MANAGED_IDENTITY_CLIENT_ID"
+        value = azurerm_user_assigned_identity.container_apps.client_id
       }
 
       dynamic "env" {
@@ -140,13 +155,44 @@ resource "azurerm_container_app" "inference" {
       }
 
       env {
+        name  = "DEFAULT_TENANT_ID"
+        value = var.default_tenant_id
+      }
+
+      env {
+        name  = "TENANT_MODE"
+        value = var.tenant_mode
+      }
+
+      env {
         name  = "CONTROL_PLANE_API_URL"
         value = local.control_plane_url
       }
 
       env {
+        name  = "AZURE_MANAGED_IDENTITY_CLIENT_ID"
+        value = azurerm_user_assigned_identity.container_apps.client_id
+      }
+
+      env {
         name  = "CLAIMS_RISK_FEATURE_VERSION"
         value = "claims-risk-features-v1"
+      }
+
+      dynamic "env" {
+        for_each = var.claims_risk_model_uri != "" ? [1] : []
+        content {
+          name  = "CLAIMS_RISK_MODEL_URI"
+          value = var.claims_risk_model_uri
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.claims_risk_model_metadata_path != "" ? [1] : []
+        content {
+          name  = "CLAIMS_RISK_MODEL_METADATA_PATH"
+          value = var.claims_risk_model_metadata_path
+        }
       }
 
       env {
@@ -233,8 +279,23 @@ resource "azurerm_container_app" "rag" {
       }
 
       env {
+        name  = "DEFAULT_TENANT_ID"
+        value = var.default_tenant_id
+      }
+
+      env {
+        name  = "TENANT_MODE"
+        value = var.tenant_mode
+      }
+
+      env {
         name  = "CONTROL_PLANE_API_URL"
         value = local.control_plane_url
+      }
+
+      env {
+        name  = "AZURE_MANAGED_IDENTITY_CLIENT_ID"
+        value = azurerm_user_assigned_identity.container_apps.client_id
       }
 
       env {

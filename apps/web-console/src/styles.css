@@ -70,6 +70,13 @@ h1 {
   margin-bottom: 0;
 }
 
+.tenant-banner {
+  color: #526570;
+  font-size: 0.86rem;
+  font-weight: 700;
+  margin: 8px 0 0;
+}
+
 h2 {
   color: #172026;
   font-size: 1rem;

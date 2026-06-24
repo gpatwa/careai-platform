@@ -392,8 +392,18 @@ class WorkflowRunCreate(TenantScopedCreate):
     target_id: str = Field(..., description="Target business object identifier.")
     requested_by: str = Field(..., description="Workflow requester or initiating service.")
     review_required: bool = Field(default=False)
+    autonomous_mode: bool = Field(
+        default=False,
+        description="Enables autonomous planner execution for the workflow.",
+    )
+    schedule_interval_seconds: int | None = Field(default=None, ge=1)
     steps_json: list[dict[str, Any]] = Field(default_factory=list)
     input_json: dict[str, Any] = Field(default_factory=dict)
+    planner_state_json: dict[str, Any] = Field(default_factory=dict)
+    next_run_at: datetime | None = Field(
+        default=None,
+        description="Optional next autonomous execution time.",
+    )
 
 
 class WorkflowRunRead(BaseModel):
@@ -409,9 +419,14 @@ class WorkflowRunRead(BaseModel):
     requested_by: str
     assigned_reviewer: str | None
     review_required: bool
+    autonomous_mode: bool
+    schedule_interval_seconds: int | None
     steps_json: list[dict[str, Any]]
     input_json: dict[str, Any]
     output_json: dict[str, Any]
+    planner_state_json: dict[str, Any]
+    next_run_at: datetime | None
+    last_planner_run_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -469,6 +484,53 @@ class PaymentIntegrityCaseCreate(TenantScopedCreate):
     requested_by: str = "claims-ops"
     start_workflow: bool = True
     findings_json: dict[str, Any] = Field(default_factory=dict)
+    autonomous_mode: bool = False
+    workflow_input_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowPlannerDecisionRead(BaseModel):
+    workflow_run_id: str
+    can_execute: bool
+    tool_name: str | None = None
+    reasoning: str
+    inputs_json: dict[str, Any] = Field(default_factory=dict)
+    blocked_reason: str | None = None
+
+
+class WorkflowExecutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_steps: int = Field(default=1, ge=1, le=10)
+    run_until_blocked: bool = False
+    actor: str | None = None
+
+
+class PlannerRunDueRequest(TenantScopedCreate):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=10, ge=1, le=100)
+    max_steps_per_workflow: int = Field(default=5, ge=1, le=20)
+    workflow_type: str | None = None
+
+
+class PlannerRunDueResponse(BaseModel):
+    executed_count: int
+    workflow_ids: list[str]
+    completed_count: int
+    waiting_for_review_count: int
+    failed_count: int
+
+
+class PromptOptimizationRunCreate(TenantScopedCreate):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_id: str
+    requested_by: str = "llm-platform"
+    autonomous_mode: bool = True
+    schedule_interval_seconds: int | None = Field(default=None, ge=1)
+    auto_deploy: bool = False
+    allow_self_approval: bool = False
+    planner_state_json: dict[str, Any] = Field(default_factory=dict)
 
 
 class PaymentIntegrityCaseRead(BaseModel):

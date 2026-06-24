@@ -23,7 +23,7 @@ def test_upgrade_database_creates_model_error_events_table(tmp_path) -> None:
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
 
-    assert revision == "0001_initial_schema"
+    assert revision == "0002_workflow_tenant_scope"
     deployment_columns = {column["name"] for column in inspector.get_columns("deployments")}
     assert {
         "champion_model_id",
@@ -32,6 +32,14 @@ def test_upgrade_database_creates_model_error_events_table(tmp_path) -> None:
         "rollback_model_id",
         "health_status",
     } <= deployment_columns
+    workflow_columns = {column["name"] for column in inspector.get_columns("workflow_runs")}
+    assert {
+        "autonomous_mode",
+        "schedule_interval_seconds",
+        "planner_state_json",
+        "next_run_at",
+        "last_planner_run_at",
+    } <= workflow_columns
 
 
 def test_prepare_schema_uses_migrations_for_persistent_database(tmp_path) -> None:
@@ -47,3 +55,5 @@ def test_prepare_schema_uses_migrations_for_persistent_database(tmp_path) -> Non
     assert "alembic_version" in inspector.get_table_names()
     deployment_columns = {column["name"] for column in inspector.get_columns("deployments")}
     assert "traffic_split_json" in deployment_columns
+    workflow_columns = {column["name"] for column in inspector.get_columns("workflow_runs")}
+    assert "autonomous_mode" in workflow_columns

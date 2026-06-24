@@ -9,6 +9,8 @@ class AppSettings(BaseModel):
     environment: str = "local"
     log_level: str = "INFO"
     service_port: int
+    default_tenant_id: str = "default"
+    tenant_mode: str = "single"
     applicationinsights_connection_string: str | None = None
     database_url: str = "postgresql://careai:careai_dev_password@localhost:5432/careai"
     redis_url: str = "redis://localhost:6379/0"
@@ -25,6 +27,8 @@ def load_settings(service_name: str, default_port: int) -> AppSettings:
         environment=os.getenv("ENVIRONMENT", "local"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         service_port=int(os.getenv("SERVICE_PORT", str(default_port))),
+        default_tenant_id=os.getenv("DEFAULT_TENANT_ID", "default"),
+        tenant_mode=os.getenv("TENANT_MODE", "single"),
         applicationinsights_connection_string=os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"),
         database_url=os.getenv(
             "DATABASE_URL",

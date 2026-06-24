@@ -31,6 +31,7 @@ def test_train_claims_risk_model_outputs_metrics_and_metadata(tmp_path) -> None:
     )
 
     assert result.run_id
+    assert result.model_path.exists()
     assert result.model_metadata_path.exists()
     assert result.metrics_path.exists()
     assert result.feature_list_path.exists()

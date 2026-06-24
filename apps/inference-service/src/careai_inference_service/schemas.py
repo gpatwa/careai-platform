@@ -42,6 +42,15 @@ class ClaimsRiskPredictionRequest(BaseModel):
 
     features: ClaimsRiskFeatures
     request_id: str | None = Field(default=None, description="Synthetic request identifier.")
+    tenant_id: str | None = Field(
+        default=None,
+        description="Optional tenant or customer identifier.",
+    )
+    workflow_run_id: str | None = Field(default=None, description="Optional linked workflow run.")
+    payment_integrity_case_id: str | None = Field(
+        default=None,
+        description="Optional synthetic payment integrity case identifier.",
+    )
 
 
 class ActiveModelResponse(BaseModel):
@@ -65,6 +74,9 @@ class ClaimsRiskPredictionResponse(BaseModel):
     feature_version: str
     decision_reason_codes: list[str]
     correlation_id: str
+    tenant_id: str = "default"
+    workflow_run_id: str | None = None
+    payment_integrity_case_id: str | None = None
     warnings: list[str] = Field(default_factory=list)
     fallback_mode: bool = False
 

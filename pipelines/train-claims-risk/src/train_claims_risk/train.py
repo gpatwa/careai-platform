@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import joblib
 import mlflow
 import mlflow.sklearn
 import numpy as np
@@ -34,6 +35,7 @@ DEFAULT_CODE_VERSION = "local-demo"
 @dataclass(frozen=True)
 class TrainResult:
     run_id: str
+    model_path: Path
     model_metadata_path: Path
     metrics_path: Path
     feature_list_path: Path
@@ -311,9 +313,11 @@ def train_claims_risk_model(
         }
         feature_list_path = write_json(output_path / "feature-list.json", feature_payload)
         metrics_path = write_json(output_path / "metrics.json", metrics)
-
+        model_path = output_path / "model.joblib"
+        joblib.dump(model, model_path)
         model_info = mlflow.sklearn.log_model(model, name="model")
         model_artifact_uri = model_info.model_uri
+        mlflow.log_artifact(str(model_path), artifact_path="model-export")
 
         model_metadata = {
             "name": "claims-risk",
@@ -354,6 +358,7 @@ def train_claims_risk_model(
 
     return TrainResult(
         run_id=run_id,
+        model_path=model_path,
         model_metadata_path=model_metadata_path,
         metrics_path=metrics_path,
         feature_list_path=feature_list_path,

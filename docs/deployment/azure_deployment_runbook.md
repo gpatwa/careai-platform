@@ -80,7 +80,8 @@ Create repository variables:
 
 | Variable | Source |
 | --- | --- |
-| `AZURE_CLIENT_ID` | Entra federated credential client ID. |
+| `AZURE_CLIENT_ID` | Entra federated credential client ID for GitHub login. |
+| `AZURE_MANAGED_IDENTITY_CLIENT_ID` | User-assigned managed identity client ID for the deployed apps. |
 | `AZURE_TENANT_ID` | Azure tenant ID. |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID. |
 | `AZURE_RESOURCE_GROUP` | Terraform `resource_group_name`. |
@@ -100,6 +101,10 @@ Create repository variables:
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Optional embedding deployment. |
 | `AZURE_EVENTHUB_NAME` | Terraform `event_hub_name`. |
 | `AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE` | Terraform `event_hubs_fully_qualified_namespace`. |
+| `CLAIMS_RISK_MODEL_URI` | Blob URI for the serialized `model.joblib` uploaded from the training run. |
+| `CLAIMS_RISK_MODEL_METADATA_PATH` | Blob URI for the companion `model-metadata.json`. |
+| `DEFAULT_TENANT_ID` | Default tenant/customer identifier for demo workflows, for example `payer-demo`. |
+| `TENANT_MODE` | Tenant operating mode, usually `single` for demo or `multi` for tenant-isolation walkthroughs. |
 
 Create repository secrets only when the integration is enabled:
 
@@ -133,6 +138,7 @@ scripts/demo_azure_smoke_test.sh
 - Terraform provisions Azure AI Search, but Azure-backed RAG requires Search API key plus Azure OpenAI embedding configuration until managed identity Search data-plane auth is implemented.
 - Event Hubs namespace/name are passed to Terraform-created apps when enabled. A connection string can be supplied as a workflow secret for environments that are not using managed identity.
 - The web console is static. Rebuild it whenever API base URLs change.
+- The inference service loads a real model from Azure Blob Storage when `CLAIMS_RISK_MODEL_URI` and `CLAIMS_RISK_MODEL_METADATA_PATH` are provided. The Container App must also expose `AZURE_MANAGED_IDENTITY_CLIENT_ID` for the user-assigned identity, and that identity needs `Storage Blob Data Contributor` on the artifacts container.
 
 ## Production Hardening
 

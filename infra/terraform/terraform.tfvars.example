@@ -21,6 +21,11 @@ enable_redis      = false
 enable_azure_ml   = false
 enable_event_hubs = true
 
+claims_risk_model_uri          = ""
+claims_risk_model_metadata_path = ""
+default_tenant_id             = "payer-demo"
+tenant_mode                   = "single"
+
 azure_ai_search_sku  = "basic"
 container_min_replicas = 0
 container_max_replicas = 3

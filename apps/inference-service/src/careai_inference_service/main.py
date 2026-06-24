@@ -176,6 +176,7 @@ def register_routes(application: FastAPI) -> None:
         active_model = model_manager.active_model()
         correlation_id = ensure_correlation_id()
         target_id = payload.request_id or str(uuid4())
+        tenant_id = payload.tenant_id or settings.default_tenant_id
         selected_model = model_manager.select_model(target_id or correlation_id)
         warnings = feature_warnings(
             payload.features,
@@ -225,6 +226,7 @@ def register_routes(application: FastAPI) -> None:
             action="claims_risk.predicted",
             target_id=target_id,
             correlation_id=correlation_id,
+            tenant_id=tenant_id,
             metadata={
                 "risk_band": band,
                 "model_name": selected_model.model_name,
@@ -232,6 +234,9 @@ def register_routes(application: FastAPI) -> None:
                 "selected_model_role": selected_model.role,
                 "traffic_split_json": selected_model.traffic_split_json,
                 "feature_version": active_model.feature_version,
+                "tenant_id": tenant_id,
+                "workflow_run_id": payload.workflow_run_id,
+                "payment_integrity_case_id": payload.payment_integrity_case_id,
                 "fallback_mode": fallback_mode,
                 "warnings": warnings,
             },
@@ -244,6 +249,7 @@ def register_routes(application: FastAPI) -> None:
             risk_band=band,
             latency_ms=latency_ms,
             correlation_id=correlation_id,
+            tenant_id=tenant_id,
         )
         publish_event_safely(
             application.state.event_publisher,
@@ -258,6 +264,9 @@ def register_routes(application: FastAPI) -> None:
                     "selected_model_role": selected_model.role,
                     "traffic_split_json": selected_model.traffic_split_json,
                     "feature_version": active_model.feature_version,
+                    "tenant_id": tenant_id,
+                    "workflow_run_id": payload.workflow_run_id,
+                    "payment_integrity_case_id": payload.payment_integrity_case_id,
                     "request_features_json": payload.features.feature_frame_record(),
                     "prediction_score": score,
                     "risk_band": band,
@@ -275,6 +284,25 @@ def register_routes(application: FastAPI) -> None:
                 status_code=200,
                 latency_ms=latency_ms,
                 correlation_id=correlation_id,
+                tenant_id=tenant_id,
+            )
+
+        if payload.workflow_run_id:
+            application.state.audit_client.send_workflow_signal(
+                workflow_run_id=payload.workflow_run_id,
+                signal_type="claims_risk_scored",
+                actor="inference-service",
+                tenant_id=tenant_id,
+                signal_metadata={
+                    "prediction_score": score,
+                    "risk_band": band,
+                    "model_name": selected_model.model_name,
+                    "model_version": selected_model.model_version,
+                    "selected_model_role": selected_model.role,
+                    "payment_integrity_case_id": payload.payment_integrity_case_id,
+                    "warnings": warnings,
+                    "fallback_mode": fallback_mode,
+                },
             )
 
         return ClaimsRiskPredictionResponse(
@@ -287,6 +315,9 @@ def register_routes(application: FastAPI) -> None:
             feature_version=active_model.feature_version,
             decision_reason_codes=reason_codes(payload.features, score),
             correlation_id=correlation_id,
+            tenant_id=tenant_id,
+            workflow_run_id=payload.workflow_run_id,
+            payment_integrity_case_id=payload.payment_integrity_case_id,
             warnings=warnings,
             fallback_mode=fallback_mode,
         )

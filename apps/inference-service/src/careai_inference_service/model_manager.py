@@ -1,10 +1,12 @@
 import json
 import logging
 import os
+import tempfile
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import joblib
 import mlflow.sklearn
@@ -147,6 +149,9 @@ class ModelManager:
         )
 
     def _load_model(self, model_uri: str) -> Any:
+        if self._is_blob_url(model_uri):
+            return self._load_joblib_from_blob_url(model_uri)
+
         path = Path(model_uri)
         if "://" not in model_uri and path.suffix in {".joblib", ".pkl"}:
             return joblib.load(path)
@@ -154,10 +159,47 @@ class ModelManager:
 
     def _load_metadata(self) -> dict[str, Any]:
         if self.settings.model_metadata_path:
+            if self._is_blob_url(self.settings.model_metadata_path):
+                return json.loads(self._read_text_from_blob_url(self.settings.model_metadata_path))
             metadata_path = Path(self.settings.model_metadata_path)
             if metadata_path.exists():
                 return json.loads(metadata_path.read_text())
         return {"name": "claims-risk", "version": "unknown"}
+
+    def _is_blob_url(self, value: str) -> bool:
+        parsed = urlparse(value)
+        return parsed.scheme in {"http", "https"} and parsed.netloc.endswith(
+            ".blob.core.windows.net"
+        )
+
+    def _load_joblib_from_blob_url(self, blob_url: str) -> Any:
+        blob_bytes = self._download_blob_bytes(blob_url)
+        suffix = Path(urlparse(blob_url).path).suffix or ".joblib"
+        with tempfile.NamedTemporaryFile(suffix=suffix) as temp_file:
+            temp_file.write(blob_bytes)
+            temp_file.flush()
+            return joblib.load(temp_file.name)
+
+    def _read_text_from_blob_url(self, blob_url: str) -> str:
+        return self._download_blob_bytes(blob_url).decode("utf-8")
+
+    def _download_blob_bytes(self, blob_url: str) -> bytes:
+        try:
+            from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+            from azure.storage.blob import BlobClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "azure-storage-blob and azure-identity are required for Azure Blob model loading"
+            ) from exc
+
+        client_id = os.getenv("AZURE_MANAGED_IDENTITY_CLIENT_ID") or os.getenv("AZURE_CLIENT_ID")
+        credential = (
+            ManagedIdentityCredential(client_id=client_id)
+            if client_id
+            else DefaultAzureCredential()
+        )
+        blob_client = BlobClient.from_blob_url(blob_url, credential=credential)
+        return blob_client.download_blob().readall()
 
 
 def parse_traffic_split(raw_value: str | None) -> dict[str, int] | None:

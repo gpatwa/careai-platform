@@ -6,6 +6,8 @@ The platform is intended to show the full lifecycle of model and RAG systems: sy
 
 It now also demonstrates a payer-style agent workflow path: tenant-aware workflow runs, Payment Integrity case intake, model scoring, policy retrieval, human review queue escalation, and final case resolution.
 
+The control plane also includes an autonomous planner: it can select the next workflow tool, execute bounded workflows in the background, and run a governed prompt self-optimization path that drafts, evaluates, and optionally deploys a new prompt version when explicit self-approval flags are enabled.
+
 ## Architecture
 
 ```mermaid
@@ -175,6 +177,12 @@ scripts/demo_local.sh
 
 The script starts local services, generates synthetic claims data, trains and registers a model, creates model-card and approval metadata, creates a canary deployment, calls inference, ingests synthetic RAG documents, runs a RAG query, and writes an evaluation report under `data/local/demo/`.
 
+Run the autonomous workflow scheduler locally:
+
+```bash
+.venv/bin/careai-autonomous-planner --limit 10 --max-steps-per-workflow 5
+```
+
 Run deployed smoke tests after Azure Container Apps are deployed:
 
 ```bash
@@ -208,6 +216,7 @@ Demo flow:
 5. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
 6. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
 7. Open Governance to show release gates, approvals, workflow runs, human review queue items, Payment Integrity cases, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
+8. Use `GET /workflow-runs/{id}/planner-decision` or `POST /planner/run-due` to explain autonomous tool selection and background orchestration.
 
 Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 
@@ -344,6 +353,8 @@ Set `AZURE_AI_SEARCH_ENDPOINT`, `AZURE_AI_SEARCH_API_KEY`, `AZURE_OPENAI_ENDPOIN
 ## RAG Gateway API
 
 The RAG service answers healthcare-operations questions over the synthetic document index. It enforces role-based retrieval filters, uses approved control-plane prompts when available, falls back to a local prompt and mock LLM provider for offline demos, and now runs a small loop-engineering harness: retrieve, answer, verify groundedness/citations, retry once with verifier feedback, then emit safe audit metadata without raw question or answer text.
+
+The control plane can also launch `prompt_self_optimization` workflows. These planner-driven runs analyze prompt feedback, create a candidate prompt version, record a deterministic evaluation run, and either hand the candidate to governance review or deploy it automatically when the workflow was created with explicit self-approval flags.
 
 Start dependencies and the service:
 

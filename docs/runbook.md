@@ -168,6 +168,21 @@ To inspect the production-style hill-climbing view from live traces:
 curl http://localhost:8000/monitoring/rag/improvement-summary
 ```
 
+To preview or execute the autonomous planner for a workflow:
+
+```bash
+curl http://localhost:8000/workflow-runs/<workflow-run-id>/planner-decision
+curl -X POST http://localhost:8000/workflow-runs/<workflow-run-id>/execute \
+  -H 'content-type: application/json' \
+  -d '{"max_steps": 5, "run_until_blocked": true}'
+```
+
+To run due workflows as a background-style local scheduler:
+
+```bash
+.venv/bin/careai-autonomous-planner --limit 10 --max-steps-per-workflow 5
+```
+
 ## Governance Gates
 
 Create or review model cards and prompt cards before production use:

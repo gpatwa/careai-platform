@@ -24,3 +24,18 @@ def test_readyz() -> None:
     body = response.json()
     assert body["status"] == "ready"
     assert body["dependencies"]["metadata_database"] == "ready"
+
+
+def test_cors_preflight_allows_tenant_header() -> None:
+    response = TestClient(app).options(
+        "/models",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-tenant-id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "x-tenant-id" in response.headers["access-control-allow-headers"]

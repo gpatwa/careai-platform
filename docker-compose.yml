@@ -68,6 +68,8 @@ services:
       SERVICE_NAME: control-plane-api
       SERVICE_PORT: "8000"
       CONTROL_PLANE_DATABASE_URL: postgresql+psycopg://careai:careai_dev_password@postgres:5432/careai
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-payer-demo}
+      TENANT_MODE: ${TENANT_MODE:-single}
       AZURE_EVENTHUB_NAME: ${AZURE_EVENTHUB_NAME:-}
       AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE: ${AZURE_EVENTHUB_FULLY_QUALIFIED_NAMESPACE:-}
       AZURE_EVENTHUB_CONNECTION_STRING: ${AZURE_EVENTHUB_CONNECTION_STRING:-}
@@ -90,6 +92,8 @@ services:
       SERVICE_PORT: "8001"
       CONTROL_PLANE_API_URL: http://control-plane-api:8000
       CONTROL_PLANE_URL: http://control-plane-api:8000
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-payer-demo}
+      TENANT_MODE: ${TENANT_MODE:-single}
       CLAIMS_RISK_MODEL_URI: ${CLAIMS_RISK_MODEL_URI:-}
       CLAIMS_RISK_MODEL_PATH: ${CLAIMS_RISK_MODEL_PATH:-}
       CLAIMS_RISK_MODEL_METADATA_PATH: ${CLAIMS_RISK_MODEL_METADATA_PATH:-}
@@ -122,6 +126,8 @@ services:
       SERVICE_PORT: "8002"
       CONTROL_PLANE_API_URL: http://control-plane-api:8000
       CONTROL_PLANE_URL: http://control-plane-api:8000
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-payer-demo}
+      TENANT_MODE: ${TENANT_MODE:-single}
       RAG_DOCS_DIR: data/synthetic_docs
       RAG_LOCAL_INDEX_PATH: data/local/rag-index.json
       RAG_AUDIT_ENABLED: ${RAG_AUDIT_ENABLED:-true}
@@ -153,6 +159,7 @@ services:
       args:
         VITE_CONTROL_PLANE_API_URL: ${VITE_CONTROL_PLANE_API_URL:-http://localhost:8000}
         VITE_RAG_SERVICE_URL: ${VITE_RAG_SERVICE_URL:-http://localhost:8002}
+        VITE_DEFAULT_TENANT_ID: ${VITE_DEFAULT_TENANT_ID:-payer-demo}
     container_name: careai-web-console
     ports:
       - "3000:8080"

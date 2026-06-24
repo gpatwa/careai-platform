@@ -37,6 +37,40 @@ DRIFT_STATUS_VALUES = {"green": 0, "yellow": 1, "red": 2}
 _drift_status_by_model: dict[tuple[str, str], int] = {}
 
 
+def patch_fastapi_instrumentation_route_details() -> None:
+    try:
+        import opentelemetry.instrumentation.fastapi as fastapi_instrumentation
+    except ImportError:  # pragma: no cover - optional dependency
+        return
+
+    if getattr(fastapi_instrumentation, "_careai_route_patch_applied", False):
+        return
+
+    route_cls = fastapi_instrumentation.Route
+    match_enum = fastapi_instrumentation.Match
+
+    def safe_get_route_details(scope: dict[str, Any]) -> str | None:
+        app = scope["app"]
+        route = None
+
+        for starlette_route in app.routes:
+            match, _ = (
+                route_cls.matches(starlette_route, scope)
+                if isinstance(starlette_route, route_cls)
+                else starlette_route.matches(scope)
+            )
+            candidate_route = getattr(starlette_route, "path", scope.get("path"))
+            if match == match_enum.FULL:
+                route = candidate_route
+                break
+            if match == match_enum.PARTIAL:
+                route = candidate_route
+        return route
+
+    fastapi_instrumentation._get_route_details = safe_get_route_details
+    fastapi_instrumentation._careai_route_patch_applied = True
+
+
 def _drift_status_callback(_options: object) -> list[object]:
     if Observation is None:
         return []
@@ -210,6 +244,7 @@ def instrument_fastapi_app(application: FastAPI, settings: AppSettings) -> Obser
     app_insights_enabled = configure_application_insights(settings)
     if FastAPIInstrumentor is not None:
         try:
+            patch_fastapi_instrumentation_route_details()
             FastAPIInstrumentor.instrument_app(application)
         except Exception:
             logger.exception("FastAPI OpenTelemetry instrumentation failed")

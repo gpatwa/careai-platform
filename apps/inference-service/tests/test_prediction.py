@@ -71,6 +71,48 @@ def test_prediction_uses_loaded_model(tmp_path) -> None:
     assert "HIGH_SCORE_THRESHOLD" in body["decision_reason_codes"]
 
 
+def test_prediction_loads_model_from_blob_url(monkeypatch, tmp_path) -> None:
+    model_path = tmp_path / "claims-risk.joblib"
+    metadata_path = tmp_path / "model-metadata.json"
+    joblib.dump(FixedProbabilityModel(), model_path)
+    metadata_path.write_text(json.dumps({"name": "claims-risk", "version": "azure-blob"}))
+    model_bytes = model_path.read_bytes()
+    metadata_bytes = metadata_path.read_text().encode("utf-8")
+
+    def fake_download_blob_bytes(self, blob_url: str) -> bytes:
+        if blob_url.endswith("model.joblib"):
+            return model_bytes
+        if blob_url.endswith("model-metadata.json"):
+            return metadata_bytes
+        raise AssertionError(f"Unexpected blob URL: {blob_url}")
+
+    monkeypatch.setattr(
+        "careai_inference_service.model_manager.ModelManager._download_blob_bytes",
+        fake_download_blob_bytes,
+    )
+
+    app = create_app(
+        InferenceSettings(
+            model_uri="https://careaistorage.blob.core.windows.net/artifacts/model.joblib",
+            model_metadata_path="https://careaistorage.blob.core.windows.net/artifacts/model-metadata.json",
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url=None,
+            audit_enabled=False,
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/predict/claims-risk", json=valid_payload())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction_score"] == 0.8
+    assert body["model_name"] == "claims-risk"
+    assert body["model_version"] == "azure-blob"
+    assert body["fallback_mode"] is False
+
+
 def test_prediction_traffic_split_selects_champion_and_challenger(tmp_path) -> None:
     model_path = tmp_path / "claims-risk.joblib"
     metadata_path = tmp_path / "model-metadata.json"
@@ -181,9 +223,10 @@ def test_audit_client_sends_prediction_event(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
+        def post(self, url: str, json: dict, headers=None):
             captured["url"] = url
             captured["json"] = json
+            captured["headers"] = headers
             return FakeResponse()
 
     monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
@@ -219,9 +262,10 @@ def test_audit_client_sends_monitoring_prediction_event(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
+        def post(self, url: str, json: dict, headers=None):
             captured["url"] = url
             captured["json"] = json
+            captured["headers"] = headers
             return FakeResponse()
 
     monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
@@ -260,9 +304,10 @@ def test_audit_client_sends_monitoring_error_event(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
+        def post(self, url: str, json: dict, headers=None):
             captured["url"] = url
             captured["json"] = json
+            captured["headers"] = headers
             return FakeResponse()
 
     monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
@@ -301,8 +346,8 @@ def test_prediction_route_emits_monitoring_event(monkeypatch) -> None:
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
-            posts.append({"url": url, "json": json})
+        def post(self, url: str, json: dict, headers=None):
+            posts.append({"url": url, "json": json, "headers": headers})
             return FakeResponse()
 
     monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
@@ -369,6 +414,61 @@ def test_prediction_route_publishes_prediction_created_event() -> None:
     assert "feature_timestamp" not in event.payload["request_features_json"]
 
 
+def test_prediction_route_sends_workflow_signal(monkeypatch) -> None:
+    posts: list[dict] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, json: dict, headers=None):
+            posts.append({"url": url, "json": json, "headers": headers})
+            return FakeResponse()
+
+    monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
+    app = create_app(
+        InferenceSettings(
+            model_uri=None,
+            model_metadata_path=None,
+            feature_version="features-test",
+            max_feature_age_minutes=60,
+            control_plane_url="http://control-plane:8000",
+            audit_enabled=True,
+            monitoring_enabled=True,
+        )
+    )
+
+    payload = valid_payload()
+    payload["tenant_id"] = "payer-acme"
+    payload["workflow_run_id"] = "workflow-001"
+    payload["payment_integrity_case_id"] = "pi-case-001"
+
+    with TestClient(app) as client:
+        response = client.post("/predict/claims-risk", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tenant_id"] == "payer-acme"
+    assert body["workflow_run_id"] == "workflow-001"
+    workflow_post = next(
+        post
+        for post in posts
+        if "/workflow-runs/workflow-001/signals" in post["url"]
+    )
+    assert workflow_post["json"]["signal_type"] == "claims_risk_scored"
+    assert workflow_post["headers"]["x-tenant-id"] == "payer-acme"
+
+
 def test_prediction_route_emits_error_event_when_model_prediction_fails(
     monkeypatch,
     tmp_path,
@@ -389,8 +489,8 @@ def test_prediction_route_emits_error_event_when_model_prediction_fails(
         def __exit__(self, exc_type, exc, tb) -> None:
             return None
 
-        def post(self, url: str, json: dict):
-            posts.append({"url": url, "json": json})
+        def post(self, url: str, json: dict, headers=None):
+            posts.append({"url": url, "json": json, "headers": headers})
             return FakeResponse()
 
     monkeypatch.setattr("careai_inference_service.audit.httpx.Client", FakeClient)
