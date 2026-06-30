@@ -1,0 +1,265 @@
+{"kind":"deck","id":"pr/apwwv9","name":"Deck"}
+{"kind":"layout","layoutId":"84a8aafd-9bf5-487e-83ab-12634995d45e","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"f01c7595-154c-4111-9a01-5f0ecd3da140","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/34er61","slide":1,"title":"CAREAI PLATFORM","textShapes":5}
+{"kind":"shape","id":"sh/d8v6psfi","slide":1,"bbox":[58,56,7,590]}
+{"kind":"textbox","id":"sh/6hcrmhk3","slide":1,"text":"CAREAI PLATFORM","textPreview":"CAREAI PLATFORM","textChars":15,"textLines":1,"bbox":[92,78,480,28]}
+{"kind":"textbox","id":"sh/z25kb6xk","slide":1,"text":"Enterprise AI platform\nfor healthcare operations","textPreview":"Enterprise AI platform | for healthcare operations","textChars":48,"textLines":2,"bbox":[92,162,970,165]}
+{"kind":"textbox","id":"sh/ovahoza1","slide":1,"text":"A synthetic-data-only demonstration of MLOps, LLMOps, governance, and Azure deployment.","textPreview":"A synthetic-data-only demonstration of MLOps, LLMOps, governance, and Azure deployment.","textChars":87,"textLines":1,"bbox":[94,366,850,72]}
+{"kind":"shape","id":"sh/dg7adsji","slide":1,"bbox":[94,512,950,92]}
+{"kind":"textbox","id":"sh/6tovahoz","slide":1,"text":"Safe rollout  ·  observable services  ·  repeatable platform reuse","textPreview":"Safe rollout  ·  observable services  ·  repeatable platform reuse","textChars":66,"textLines":1,"bbox":[122,542,894,30]}
+{"kind":"textbox","id":"sh/vahoza1g","slide":1,"text":"System design interview deck","textPreview":"System design interview deck","textChars":28,"textLines":1,"bbox":[94,656,440,24]}
+{"kind":"notes","id":"nt/34er61","slide":1,"text":"This is CareAI Platform, a production-style demo of how I would design an AI platform for payer and healthcare-operations use cases without real PHI. The point is not one model or one chatbot; it is a reusable platform for data, models, prompts, deployments, governance, monitoring, and rollback.\n\nMy interview framing: it helps operations teams move from isolated AI experiments to governed, deployable, observable AI services."}
+{"kind":"slide","id":"sl/euskex","slide":2,"title":"01  /  PRODUCT FRAMING","textShapes":10}
+{"kind":"textbox","id":"sh/hoza1gvy","slide":2,"text":"01  /  PRODUCT FRAMING","textPreview":"01  /  PRODUCT FRAMING","textChars":22,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/a1gvy90j","slide":2,"text":"The product: governed AI services for operations teams","textPreview":"The product: governed AI services for operations teams","textChars":54,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/zidonyd0","slide":2,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/svu9knih","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/hgn29gr2","slide":2,"bbox":[58,180,348,386]}
+{"kind":"textbox","id":"sh/ap4r65wj","slide":2,"text":"Who uses it","textPreview":"Who uses it","textChars":11,"textLines":1,"bbox":[80,202,304,52]}
+{"kind":"textbox","id":"sh/za1gvy90","slide":2,"text":"Payment integrity\nClaims operations\nPrior authorization\nMember support\nInternal AI platform teams","textPreview":"Payment integrity | Claims operations | Prior authorization | Member support | Internal AI platform teams","textChars":97,"textLines":5,"bbox":[80,260,304,290]}
+{"kind":"shape","id":"sh/sji5snel","slide":2,"bbox":[466,180,348,386]}
+{"kind":"textbox","id":"sh/h4byhgn2","slide":2,"text":"What it provides","textPreview":"What it provides","textChars":16,"textLines":1,"bbox":[488,202,304,52]}
+{"kind":"textbox","id":"sh/p4r65wju","slide":2,"text":"Asset registry\nReusable inference and RAG APIs\nApproval workflows\nAuditability and lineage","textPreview":"Asset registry | Reusable inference and RAG APIs | Approval workflows | Auditability and lineage","textChars":90,"textLines":4,"bbox":[488,260,304,290]}
+{"kind":"shape","id":"sh/wjudg7ad","slide":2,"bbox":[874,180,348,386]}
+{"kind":"textbox","id":"sh/7y1kre1w","slide":2,"text":"What it protects","textPreview":"What it protects","textChars":16,"textLines":1,"bbox":[896,202,304,52]}
+{"kind":"textbox","id":"sh/ed8v6psf","slide":2,"text":"Quality and drift\nLatency and reliability\nGroundedness and safety\nSafe rollout and rollback","textPreview":"Quality and drift | Latency and reliability | Groundedness and safety | Safe rollout and rollback","textChars":91,"textLines":4,"bbox":[896,260,304,290]}
+{"kind":"textbox","id":"sh/pwb2hwfy","slide":2,"text":"One platform, two execution patterns: predictive ML + document-grounded GenAI.","textPreview":"One platform, two execution patterns: predictive ML + document-grounded GenAI.","textChars":78,"textLines":1,"bbox":[58,604,1120,32]}
+{"kind":"notes","id":"nt/euskex","slide":2,"text":"CareAI is an internal AI platform for healthcare operations teams that need secure, governed, reusable AI services across predictive models and document-reasoning workflows.\n\nDirect users are platform engineers, ML engineers, data scientists, and operations stakeholders. The business-facing customers are teams that need faster decisions, consistent workflows, and clear operational visibility."}
+{"kind":"slide","id":"sl/918t70","slide":3,"title":"02  /  HIGH-LEVEL ARCHITECTURE","textShapes":19}
+{"kind":"textbox","id":"sh/hgn29gr2","slide":3,"text":"02  /  HIGH-LEVEL ARCHITECTURE","textPreview":"02  /  HIGH-LEVEL ARCHITECTURE","textChars":30,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/ap4r65wj","slide":3,"text":"The control plane is the center of gravity","textPreview":"The control plane is the center of gravity","textChars":42,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/za1gvy90","slide":3,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/s36hcrmh","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/hoza1gvy","slide":3,"bbox":[58,170,230,145]}
+{"kind":"textbox","id":"sh/a1gvy90j","slide":3,"text":"Web console","textPreview":"Web console","textChars":11,"textLines":1,"bbox":[80,192,186,52]}
+{"kind":"textbox","id":"sh/zidonyd0","slide":3,"text":"Operational workflows and review","textPreview":"Operational workflows and review","textChars":32,"textLines":1,"bbox":[80,250,186,49]}
+{"kind":"shape","id":"sh/s72x4nap","slide":3,"bbox":[58,357,230,145]}
+{"kind":"textbox","id":"sh/lszqtcj6","slide":3,"text":"Pipelines","textPreview":"Pipelines","textChars":9,"textLines":1,"bbox":[80,379,186,52]}
+{"kind":"textbox","id":"sh/h0fepkzu","slide":3,"text":"Synthetic data, training, ingestion","textPreview":"Synthetic data, training, ingestion","textChars":35,"textLines":1,"bbox":[80,437,186,49]}
+{"kind":"textbox","id":"sh/sfil0rqd","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[300,224,80,36]}
+{"kind":"textbox","id":"sh/zupwb2hw","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[300,418,80,36]}
+{"kind":"shape","id":"sh/a9w3m94f","slide":3,"bbox":[390,184,300,318]}
+{"kind":"textbox","id":"sh/hcrmhk3q","slide":3,"text":"CONTROL PLANE","textPreview":"CONTROL PLANE","textChars":13,"textLines":1,"bbox":[425,224,230,32]}
+{"kind":"textbox","id":"sh/orytsvu9","slide":3,"text":"Datasets · models · prompts\nDeployments · approvals\nEvaluation · audit · workflows","textPreview":"Datasets · models · prompts | Deployments · approvals | Evaluation · audit · workflows","textChars":82,"textLines":3,"bbox":[425,286,230,110]}
+{"kind":"textbox","id":"sh/z61032ls","slide":3,"text":"PostgreSQL · Redis · events","textPreview":"PostgreSQL · Redis · events","textChars":27,"textLines":1,"bbox":[425,435,230,24]}
+{"kind":"textbox","id":"sh/al87ed8b","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[704,236,62,36]}
+{"kind":"textbox","id":"sh/hk3q5o7q","slide":3,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[704,405,62,36]}
+{"kind":"shape","id":"sh/oza1gvy9","slide":3,"bbox":[782,170,440,145]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":3,"text":"Inference service","textPreview":"Inference service","textChars":17,"textLines":1,"bbox":[804,192,396,52]}
+{"kind":"textbox","id":"sh/d0z61032","slide":3,"text":"Validated claims-risk scoring, model metadata, monitoring and fallback behavior","textPreview":"Validated claims-risk scoring, model metadata, monitoring and fallback behavior","textChars":79,"textLines":1,"bbox":[804,250,396,49]}
+{"kind":"shape","id":"sh/29gr2p8n","slide":3,"bbox":[782,357,440,145]}
+{"kind":"textbox","id":"sh/vu9knih4","slide":3,"text":"RAG service","textPreview":"RAG service","textChars":11,"textLines":1,"bbox":[804,379,396,52]}
+{"kind":"textbox","id":"sh/knih4byh","slide":3,"text":"Role-filtered retrieval, approved prompts, cited answers and safety checks","textPreview":"Role-filtered retrieval, approved prompts, cited answers and safety checks","textChars":74,"textLines":1,"bbox":[804,437,396,49]}
+{"kind":"textbox","id":"sh/d8bat47y","slide":3,"text":"Local-first development; Azure-native deployment path.","textPreview":"Local-first development; Azure-native deployment path.","textChars":54,"textLines":1,"bbox":[58,586,790,28]}
+{"kind":"notes","id":"nt/918t70","slide":3,"text":"This is the 30-second system view. The control plane tracks datasets, model artifacts, prompt templates, approvals, deployments, audit events, evaluation runs, and bounded workflow state. Two serving planes execute the work: a prediction API for claims-risk inference and a RAG gateway for policy and operations Q&A. Pipelines feed both sides, and monitoring closes the loop.\n\nThe design is local-first for development, but Azure-native for deployment."}
+{"kind":"slide","id":"sl/kriq7v","slide":4,"title":"03  /  CONTROL PLANE AND GOVERNANCE","textShapes":10}
+{"kind":"textbox","id":"sh/kre1w7mp","slide":4,"text":"03  /  CONTROL PLANE AND GOVERNANCE","textPreview":"03  /  CONTROL PLANE AND GOVERNANCE","textChars":35,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/val87ed8","slide":4,"text":"Governance is built into the lifecycle—not bolted on","textPreview":"Governance is built into the lifecycle—not bolted on","textChars":52,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/6psfil0r","slide":4,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/donyd0z6","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/k3q5o7qp","slide":4,"bbox":[58,178,350,346]}
+{"kind":"textbox","id":"sh/vixczed8","slide":4,"text":"Core assets","textPreview":"Core assets","textChars":11,"textLines":1,"bbox":[80,200,306,52]}
+{"kind":"textbox","id":"sh/2x4nap4r","slide":4,"text":"Datasets\nModels and deployments\nPrompt templates\nEvaluation runs\nModel cards and prompt cards","textPreview":"Datasets | Models and deployments | Prompt templates | Evaluation runs | Model cards and prompt cards","textChars":93,"textLines":5,"bbox":[80,258,306,250]}
+{"kind":"shape","id":"sh/d0z61032","slide":4,"bbox":[466,178,350,346]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":4,"text":"Release gates","textPreview":"Release gates","textChars":13,"textLines":1,"bbox":[488,200,306,52]}
+{"kind":"textbox","id":"sh/ylc7u54z","slide":4,"text":"Model card + approval before production\n\nPrompt card + approval before production\n\nStage transitions are policy controlled","textPreview":"Model card + approval before production |  | Prompt card + approval before production |  | Stage transitions are policy controlled","textChars":122,"textLines":5,"bbox":[488,258,306,250]}
+{"kind":"shape","id":"sh/r65wjudg","slide":4,"bbox":[874,178,348,346]}
+{"kind":"textbox","id":"sh/gr2p8nqx","slide":4,"text":"Traceability","textPreview":"Traceability","textChars":12,"textLines":1,"bbox":[896,200,304,52]}
+{"kind":"textbox","id":"sh/9cvixcze","slide":4,"text":"Correlation IDs on mutations\n\nAudit events\n\nLineage to data, metrics, code and run IDs","textPreview":"Correlation IDs on mutations |  | Audit events |  | Lineage to data, metrics, code and run IDs","textChars":86,"textLines":5,"bbox":[896,258,304,250]}
+{"kind":"textbox","id":"sh/yxobm58z","slide":4,"text":"The platform knows what changed, who approved it, and why it is deployed.","textPreview":"The platform knows what changed, who approved it, and why it is deployed.","textChars":73,"textLines":1,"bbox":[58,580,1125,32]}
+{"kind":"notes","id":"nt/kriq7v","slide":4,"text":"I position the control plane as the governance and workflow brain. It stores metadata, lineage, evaluation status, approval decisions, and rollout state. This is where platform maturity shows up: it is not just serving predictions; it knows what is deployed, why it was approved, and what changed.\n\nThe key point is that production promotion is policy-controlled, not an ad hoc API call."}
+{"kind":"slide","id":"sl/ei2q35","slide":5,"title":"04  /  CLAIMS-RISK LIFECYCLE","textShapes":35}
+{"kind":"textbox","id":"sh/bq1oryts","slide":5,"text":"04  /  CLAIMS-RISK LIFECYCLE","textPreview":"04  /  CLAIMS-RISK LIFECYCLE","textChars":28,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/4byhgn29","slide":5,"text":"MLOps: train, govern, deploy, observe, improve","textPreview":"MLOps: train, govern, deploy, observe, improve","textChars":46,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/twra5gbq","slide":5,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/mhk3q5o7","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/b2hwfyxo","slide":5,"bbox":[58,190,252,128]}
+{"kind":"textbox","id":"sh/4nap4r65","slide":5,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[76,208,50,22]}
+{"kind":"textbox","id":"sh/t83itgfm","slide":5,"text":"Generate","textPreview":"Generate","textChars":8,"textLines":1,"bbox":[76,238,210,27]}
+{"kind":"textbox","id":"sh/mp0bi9s3","slide":5,"text":"Synthetic claims data","textPreview":"Synthetic claims data","textChars":21,"textLines":1,"bbox":[76,270,210,22]}
+{"kind":"textbox","id":"sh/bat47y1k","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[310,236,42,36]}
+{"kind":"shape","id":"sh/ji5snelo","slide":5,"bbox":[352,190,252,128]}
+{"kind":"textbox","id":"sh/uxc3ylc7","slide":5,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[370,208,50,22]}
+{"kind":"textbox","id":"sh/1kre1w7m","slide":5,"text":"Train","textPreview":"Train","textChars":5,"textLines":1,"bbox":[370,238,210,27]}
+{"kind":"textbox","id":"sh/c3ylc7u5","slide":5,"text":"Sklearn model + metrics","textPreview":"Sklearn model + metrics","textChars":23,"textLines":1,"bbox":[370,270,210,22]}
+{"kind":"textbox","id":"sh/j6tovaho","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[604,236,42,36]}
+{"kind":"shape","id":"sh/ulwval87","slide":5,"bbox":[646,190,252,128]}
+{"kind":"textbox","id":"sh/1cfa9w3m","slide":5,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[664,208,50,22]}
+{"kind":"textbox","id":"sh/crmhk3q5","slide":5,"text":"Track","textPreview":"Track","textChars":5,"textLines":1,"bbox":[664,238,210,27]}
+{"kind":"textbox","id":"sh/j2t83itg","slide":5,"text":"MLflow run + artifacts","textPreview":"MLflow run + artifacts","textChars":22,"textLines":1,"bbox":[664,270,210,22]}
+{"kind":"textbox","id":"sh/qh0fepkz","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[898,236,42,36]}
+{"kind":"shape","id":"sh/i5sneloj","slide":5,"bbox":[940,190,252,128]}
+{"kind":"textbox","id":"sh/7qpg3ex0","slide":5,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[958,208,50,22]}
+{"kind":"textbox","id":"sh/0bi9s36h","slide":5,"text":"Register","textPreview":"Register","textChars":8,"textLines":1,"bbox":[958,238,210,27]}
+{"kind":"textbox","id":"sh/pwb2hwfy","slide":5,"text":"Candidate in control plane","textPreview":"Candidate in control plane","textChars":26,"textLines":1,"bbox":[958,270,210,22]}
+{"kind":"shape","id":"sh/ed8v6psf","slide":5,"bbox":[58,386,252,128]}
+{"kind":"textbox","id":"sh/7y1kre1w","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[76,404,50,22]}
+{"kind":"textbox","id":"sh/wjudg7ad","slide":5,"text":"Approve","textPreview":"Approve","textChars":7,"textLines":1,"bbox":[76,434,210,27]}
+{"kind":"textbox","id":"sh/p4r65wju","slide":5,"text":"Model card + gate","textPreview":"Model card + gate","textChars":17,"textLines":1,"bbox":[76,466,210,22]}
+{"kind":"textbox","id":"sh/ih4byhgn","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[310,432,42,36]}
+{"kind":"shape","id":"sh/72x4nap4","slide":5,"bbox":[352,386,252,128]}
+{"kind":"textbox","id":"sh/xc3ylc7u","slide":5,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[370,404,50,22]}
+{"kind":"textbox","id":"sh/4r65wjud","slide":5,"text":"Serve","textPreview":"Serve","textChars":5,"textLines":1,"bbox":[370,434,210,27]}
+{"kind":"textbox","id":"sh/f6dcbulw","slide":5,"text":"Champion / challenger","textPreview":"Champion / challenger","textChars":21,"textLines":1,"bbox":[370,466,210,22]}
+{"kind":"textbox","id":"sh/mlkjm1cf","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[604,432,42,36]}
+{"kind":"shape","id":"sh/xkf6dcbu","slide":5,"bbox":[646,386,252,128]}
+{"kind":"textbox","id":"sh/4zidonyd","slide":5,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[664,404,50,22]}
+{"kind":"textbox","id":"sh/fepkzupw","slide":5,"text":"Monitor","textPreview":"Monitor","textChars":7,"textLines":1,"bbox":[664,434,210,27]}
+{"kind":"textbox","id":"sh/mtwra5gb","slide":5,"text":"Drift, latency, errors","textPreview":"Drift, latency, errors","textChars":22,"textLines":1,"bbox":[664,466,210,22]}
+{"kind":"textbox","id":"sh/xobm58z2","slide":5,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[898,432,42,36]}
+{"kind":"shape","id":"sh/83itgfml","slide":5,"bbox":[940,386,252,128]}
+{"kind":"textbox","id":"sh/cfa9w3m9","slide":5,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[958,404,50,22]}
+{"kind":"textbox","id":"sh/1032lszq","slide":5,"text":"Respond","textPreview":"Respond","textChars":7,"textLines":1,"bbox":[958,434,210,27]}
+{"kind":"textbox","id":"sh/u9knih4b","slide":5,"text":"Rollback or retrain","textPreview":"Rollback or retrain","textChars":19,"textLines":1,"bbox":[958,466,210,22]}
+{"kind":"textbox","id":"sh/judg7ads","slide":5,"text":"↓","textPreview":"↓","textChars":1,"textLines":1,"bbox":[610,326,62,36]}
+{"kind":"textbox","id":"sh/c7u54zid","slide":5,"text":"The deployment decision is governed; the rollback path is explicit.","textPreview":"The deployment decision is governed; the rollback path is explicit.","textChars":67,"textLines":1,"bbox":[58,582,1040,28]}
+{"kind":"notes","id":"nt/ei2q35","slide":5,"text":"The traditional ML flow starts with synthetic claims-like data, trains a risk model, logs runs to MLflow, then writes metadata to the control plane. That gives both experiment tracking and enterprise metadata. Approvals and model cards then gate deployment.\n\nThe lifecycle is concrete: dev, candidate, staging, approved, production, and deprecated."}
+{"kind":"slide","id":"sl/am84bs","slide":6,"title":"05  /  REAL-TIME INFERENCE AND ROLLOUT","textShapes":8}
+{"kind":"textbox","id":"sh/d0z61032","slide":6,"text":"05  /  REAL-TIME INFERENCE AND ROLLOUT","textPreview":"05  /  REAL-TIME INFERENCE AND ROLLOUT","textChars":38,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/29gr2p8n","slide":6,"text":"Inference is designed to fail safely","textPreview":"Inference is designed to fail safely","textChars":36,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/vu9knih4","slide":6,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/knih4byh","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/d8bat47y","slide":6,"bbox":[58,188,520,330]}
+{"kind":"textbox","id":"sh/2lszqtcj","slide":6,"text":"Serving contract","textPreview":"Serving contract","textChars":16,"textLines":1,"bbox":[80,210,476,52]}
+{"kind":"textbox","id":"sh/v6psfil0","slide":6,"text":"Validate the request schema\nLoad the active artifact\nReturn model metadata with the score\nEmit prediction and audit events\nRecord latency and monitoring signals","textPreview":"Validate the request schema | Load the active artifact | Return model metadata with the score | Emit prediction and audit events | Record...","textChars":160,"textLines":5,"bbox":[80,268,476,234]}
+{"kind":"shape","id":"sh/kre1w7mp","slide":6,"bbox":[644,188,578,330]}
+{"kind":"textbox","id":"sh/dcbulwva","slide":6,"text":"Safe rollout controls","textPreview":"Safe rollout controls","textChars":21,"textLines":1,"bbox":[666,210,534,52]}
+{"kind":"textbox","id":"sh/lszqtcj6","slide":6,"text":"Champion / challenger routing\nCanary traffic split\nRollback target in deployment metadata\nRollback recommendation from latency, error, and drift signals\nDeterministic rules fallback if model is unavailable","textPreview":"Champion / challenger routing | Canary traffic split | Rollback target in deployment metadata | Rollback recommendation from latency, err...","textChars":205,"textLines":5,"bbox":[666,268,534,234]}
+{"kind":"shape","id":"sh/s72x4nap","slide":6,"bbox":[58,560,1164,56]}
+{"kind":"textbox","id":"sh/3m94fu18","slide":6,"text":"Live local finding: the service is healthy, but currently in explicit rules-fallback mode because no model URI is configured.","textPreview":"Live local finding: the service is healthy, but currently in explicit rules-fallback mode because no model URI is configured.","textChars":125,"textLines":1,"bbox":[82,576,1110,24]}
+{"kind":"notes","id":"nt/am84bs","slide":6,"text":"The inference service does not blindly assume the model is present and healthy. It validates inputs, has freshness and missingness checks, returns explicit model metadata, and uses deterministic rules if the artifact is unavailable.\n\nFor rollout safety, champion/challenger routing and traffic splits are supported. In a production environment, the same control pattern can front a traffic router or service mesh. In the current local stack, the endpoint reports fallback mode because no model URI is mounted into the container."}
+{"kind":"slide","id":"sl/j5yzpk","slide":7,"title":"06  /  RAG FLOW","textShapes":27}
+{"kind":"textbox","id":"sh/zqtcj6to","slide":7,"text":"06  /  RAG FLOW","textPreview":"06  /  RAG FLOW","textChars":15,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/obm58z25","slide":7,"text":"LLMOps: grounded answers with retrieval, safety, and audit","textPreview":"LLMOps: grounded answers with retrieval, safety, and audit","textChars":58,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/hwfyxobm","slide":7,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/6xkf6dcb","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/zed8v6ps","slide":7,"bbox":[58,245,160,184]}
+{"kind":"textbox","id":"sh/oza1gvy9","slide":7,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[76,264,32,24]}
+{"kind":"textbox","id":"sh/hk3q5o7q","slide":7,"text":"Question","textPreview":"Question","textChars":8,"textLines":1,"bbox":[76,306,124,28]}
+{"kind":"textbox","id":"sh/al87ed8b","slide":7,"text":"Reviewer asks a policy question","textPreview":"Reviewer asks a policy question","textChars":31,"textLines":1,"bbox":[76,346,124,56]}
+{"kind":"textbox","id":"sh/z61032ls","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[218,316,32,36]}
+{"kind":"shape","id":"sh/za1gvy90","slide":7,"bbox":[250,245,160,184]}
+{"kind":"textbox","id":"sh/ap4r65wj","slide":7,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[268,264,32,24]}
+{"kind":"textbox","id":"sh/hgn29gr2","slide":7,"text":"Prompt","textPreview":"Prompt","textChars":6,"textLines":1,"bbox":[268,306,124,28]}
+{"kind":"textbox","id":"sh/svu9knih","slide":7,"text":"Fetch approved template","textPreview":"Fetch approved template","textChars":23,"textLines":1,"bbox":[268,346,124,56]}
+{"kind":"textbox","id":"sh/zidonyd0","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[410,316,32,36]}
+{"kind":"shape","id":"sh/a1gvy90j","slide":7,"bbox":[442,245,160,184]}
+{"kind":"textbox","id":"sh/hoza1gvy","slide":7,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[460,264,32,24]}
+{"kind":"textbox","id":"sh/s36hcrmh","slide":7,"text":"Retrieve","textPreview":"Retrieve","textChars":8,"textLines":1,"bbox":[460,306,124,28]}
+{"kind":"textbox","id":"sh/3m94fu18","slide":7,"text":"Role-filtered top-k chunks","textPreview":"Role-filtered top-k chunks","textChars":26,"textLines":1,"bbox":[460,346,124,56]}
+{"kind":"textbox","id":"sh/a5gbq1or","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[602,316,32,36]}
+{"kind":"shape","id":"sh/yxobm58z","slide":7,"bbox":[634,245,160,184]}
+{"kind":"textbox","id":"sh/nih4byhg","slide":7,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[652,264,32,24]}
+{"kind":"textbox","id":"sh/g3ex0nux","slide":7,"text":"Answer","textPreview":"Answer","textChars":6,"textLines":1,"bbox":[652,306,124,28]}
+{"kind":"textbox","id":"sh/5o7qpg3e","slide":7,"text":"Cited, grounded response","textPreview":"Cited, grounded response","textChars":24,"textLines":1,"bbox":[652,346,124,56]}
+{"kind":"textbox","id":"sh/ylc7u54z","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[794,316,32,36]}
+{"kind":"shape","id":"sh/r65wjudg","slide":7,"bbox":[826,245,160,184]}
+{"kind":"textbox","id":"sh/gr2p8nqx","slide":7,"text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[844,264,32,24]}
+{"kind":"textbox","id":"sh/9cvixcze","slide":7,"text":"Check","textPreview":"Check","textChars":5,"textLines":1,"bbox":[844,306,124,28]}
+{"kind":"textbox","id":"sh/yd0z6103","slide":7,"text":"Safety flags + eval signals","textPreview":"Safety flags + eval signals","textChars":27,"textLines":1,"bbox":[844,346,124,56]}
+{"kind":"textbox","id":"sh/rytsvu9k","slide":7,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[986,316,32,36]}
+{"kind":"shape","id":"sh/d4vmtwra","slide":7,"bbox":[1018,245,160,184]}
+{"kind":"textbox","id":"sh/oj2t83it","slide":7,"text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[1036,264,32,24]}
+{"kind":"textbox","id":"sh/vy90je9c","slide":7,"text":"Audit","textPreview":"Audit","textChars":5,"textLines":1,"bbox":[1036,306,124,28]}
+{"kind":"textbox","id":"sh/6dcbulwv","slide":7,"text":"Trace prompt, answer, citations","textPreview":"Trace prompt, answer, citations","textChars":31,"textLines":1,"bbox":[1036,346,124,56]}
+{"kind":"textbox","id":"sh/dsji5sne","slide":7,"text":"Azure AI Search is the cloud retrieval path; a local JSON vector index keeps the interview demo self-contained.","textPreview":"Azure AI Search is the cloud retrieval path; a local JSON vector index keeps the interview demo self-contained.","textChars":111,"textLines":1,"bbox":[58,530,1120,46]}
+{"kind":"notes","id":"nt/j5yzpk","slide":7,"text":"Documents are chunked, embedded, and indexed into Azure AI Search or a local fallback index. At query time, the service enforces role-based retrieval filters, selects an approved prompt template when available, runs safety checks, and requires citations.\n\nThe important design choice is groundedness and traceability instead of a free-form answer engine."}
+{"kind":"slide","id":"sl/44aitc","slide":8,"title":"07  /  LOOP ENGINEERING","textShapes":12}
+{"kind":"textbox","id":"sh/bi9s36hc","slide":8,"text":"07  /  LOOP ENGINEERING","textPreview":"07  /  LOOP ENGINEERING","textChars":23,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/032lszqt","slide":8,"text":"The platform is organized around bounded operational loops","textPreview":"The platform is organized around bounded operational loops","textChars":58,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/tovahoza","slide":8,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/i9s36hcr","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/bulwval8","slide":8,"bbox":[58,190,270,310]}
+{"kind":"textbox","id":"sh/0fepkzup","slide":8,"text":"Retrieval loop","textPreview":"Retrieval loop","textChars":14,"textLines":1,"bbox":[80,212,226,52]}
+{"kind":"textbox","id":"sh/p0bi9s36","slide":8,"text":"Retrieve context\nAnswer with citations\nVerify groundedness\nRetry once if needed","textPreview":"Retrieve context | Answer with citations | Verify groundedness | Retry once if needed","textChars":79,"textLines":4,"bbox":[80,270,226,214]}
+{"kind":"shape","id":"sh/idonyd0z","slide":8,"bbox":[356,190,270,310]}
+{"kind":"textbox","id":"sh/byhgn29g","slide":8,"text":"Workflow loop","textPreview":"Workflow loop","textChars":13,"textLines":1,"bbox":[378,212,226,52]}
+{"kind":"textbox","id":"sh/ra5gbq1o","slide":8,"text":"Plan one allowlisted tool\nExecute it\nVerify evidence\nRetry policy retrieval once\nHand off failures","textPreview":"Plan one allowlisted tool | Execute it | Verify evidence | Retry policy retrieval once | Hand off failures","textChars":98,"textLines":5,"bbox":[378,270,226,214]}
+{"kind":"shape","id":"sh/2p8nqxs7","slide":8,"bbox":[654,190,270,310]}
+{"kind":"textbox","id":"sh/9gr2p8nq","slide":8,"text":"Decision loop","textPreview":"Decision loop","textChars":13,"textLines":1,"bbox":[676,212,226,52]}
+{"kind":"textbox","id":"sh/gvy90je9","slide":8,"text":"Request approval\nGate promotion\nDeploy safely\nMonitor results\nRollback or retrain","textPreview":"Request approval | Gate promotion | Deploy safely | Monitor results | Rollback or retrain","textChars":81,"textLines":5,"bbox":[676,270,226,214]}
+{"kind":"shape","id":"sh/r2p8nqxs","slide":8,"bbox":[952,190,270,310]}
+{"kind":"textbox","id":"sh/2hwfyxob","slide":8,"text":"Monitoring loop","textPreview":"Monitoring loop","textChars":15,"textLines":1,"bbox":[974,212,226,52]}
+{"kind":"textbox","id":"sh/94fu18jq","slide":8,"text":"Capture prediction events\nRun drift checks\nRecord eval runs\nAudit change history\nTrigger review","textPreview":"Capture prediction events | Run drift checks | Record eval runs | Audit change history | Trigger review","textChars":95,"textLines":5,"bbox":[974,270,226,214]}
+{"kind":"textbox","id":"sh/kjm1cfa9","slide":8,"text":"A reusable platform is a set of durable feedback loops—not a one-shot model invocation.","textPreview":"A reusable platform is a set of durable feedback loops—not a one-shot model invocation.","textChars":87,"textLines":1,"bbox":[58,560,1120,34]}
+{"kind":"notes","id":"nt/44aitc","slide":8,"text":"If asked whether this follows loop engineering, the answer is yes. The RAG system has a retrieval and validation loop. MLOps has a deployment and monitoring loop. Governance has an approval loop.\n\nThe control plane also has a cross-service case loop: it deterministically plans one allowlisted tool, executes it, verifies evidence, retries incomplete policy retrieval once, and creates a human-review item for other failures. WorkflowRun planner_state_json keeps the safe plan, verification, retry, and handoff history. This is custom bounded orchestration today, not LangGraph or an unbounded LLM agent. The next cloud step is a durable queue or Container Apps Job scheduler."}
+{"kind":"slide","id":"sl/mcir8v","slide":9,"title":"08  /  MONITORING, DRIFT, AND OPERATIONS","textShapes":10}
+{"kind":"textbox","id":"sh/tcj6tova","slide":9,"text":"08  /  MONITORING, DRIFT, AND OPERATIONS","textPreview":"08  /  MONITORING, DRIFT, AND OPERATIONS","textChars":40,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/il0rqd4v","slide":9,"text":"Observability closes the gap between deployment and trust","textPreview":"Observability closes the gap between deployment and trust","textChars":57,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/b6xkf6dc","slide":9,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/0je9cvix","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/t47y1kre","slide":9,"bbox":[58,184,350,318]}
+{"kind":"textbox","id":"sh/idonyd0z","slide":9,"text":"Prediction signals","textPreview":"Prediction signals","textChars":18,"textLines":1,"bbox":[80,206,306,52]}
+{"kind":"textbox","id":"sh/byhgn29g","slide":9,"text":"Prediction count\nLatency and error rate\nRisk-band mix\nFeature missingness\nDrift against baseline","textPreview":"Prediction count | Latency and error rate | Risk-band mix | Feature missingness | Drift against baseline","textChars":96,"textLines":5,"bbox":[80,264,306,222]}
+{"kind":"shape","id":"sh/0fepkzup","slide":9,"bbox":[466,184,350,318]}
+{"kind":"textbox","id":"sh/p0bi9s36","slide":9,"text":"RAG signals","textPreview":"RAG signals","textChars":11,"textLines":1,"bbox":[488,206,306,52]}
+{"kind":"textbox","id":"sh/x0nuxc3y","slide":9,"text":"Evaluation metrics\nGroundedness\nCitation coverage\nSafety-flag counts\nPrompt version traceability","textPreview":"Evaluation metrics | Groundedness | Citation coverage | Safety-flag counts | Prompt version traceability","textChars":96,"textLines":5,"bbox":[488,264,306,222]}
+{"kind":"shape","id":"sh/4fu18jqh","slide":9,"bbox":[874,184,348,318]}
+{"kind":"textbox","id":"sh/fu18jqh0","slide":9,"text":"Platform signals","textPreview":"Platform signals","textChars":16,"textLines":1,"bbox":[896,206,304,52]}
+{"kind":"textbox","id":"sh/m94fu18j","slide":9,"text":"Correlated structured logs\nOpenTelemetry traces\nApplication Insights\nEvent Hubs publishing\nAudit events","textPreview":"Correlated structured logs | OpenTelemetry traces | Application Insights | Event Hubs publishing | Audit events","textChars":103,"textLines":5,"bbox":[896,264,304,222]}
+{"kind":"shape","id":"sh/xobm58z2","slide":9,"bbox":[58,555,1164,52]}
+{"kind":"textbox","id":"sh/83itgfml","slide":9,"text":"Simplified drift logic today; correct operational seams for a production-grade monitor tomorrow.","textPreview":"Simplified drift logic today; correct operational seams for a production-grade monitor tomorrow.","textChars":96,"textLines":1,"bbox":[82,569,1110,23]}
+{"kind":"notes","id":"nt/mcir8v","slide":9,"text":"Prediction events are persisted for monitoring. Drift checks compare recent serving distributions to training baselines. Logs and traces use a request correlation ID across services. Event Hubs support is present so the architecture can become more event-driven without changing service contracts.\n\nDrift detection is intentionally lightweight today, but the operational seams are correct."}
+{"kind":"slide","id":"sl/5cnboh","slide":10,"title":"09  /  AZURE DEPLOYMENT ARCHITECTURE","textShapes":23}
+{"kind":"textbox","id":"sh/v6psfil0","slide":10,"text":"09  /  AZURE DEPLOYMENT ARCHITECTURE","textPreview":"09  /  AZURE DEPLOYMENT ARCHITECTURE","textChars":36,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/knih4byh","slide":10,"text":"Azure deployment: Container Apps as the default path","textPreview":"Azure deployment: Container Apps as the default path","textChars":52,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/d8bat47y","slide":10,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/29gr2p8n","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/vu9knih4","slide":10,"bbox":[58,185,270,118]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":10,"text":"GitHub Actions","textPreview":"GitHub Actions","textChars":14,"textLines":1,"bbox":[80,207,226,52]}
+{"kind":"textbox","id":"sh/d0z61032","slide":10,"text":"Build, push, deploy, smoke test","textPreview":"Build, push, deploy, smoke test","textChars":31,"textLines":1,"bbox":[80,265,226,22]}
+{"kind":"textbox","id":"sh/2x4nap4r","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[334,224,54,36]}
+{"kind":"shape","id":"sh/vixczed8","slide":10,"bbox":[394,185,270,118]}
+{"kind":"textbox","id":"sh/vmtwra5g","slide":10,"text":"Azure Container Registry","textPreview":"Azure Container Registry","textChars":24,"textLines":1,"bbox":[416,207,226,52]}
+{"kind":"textbox","id":"sh/61032lsz","slide":10,"text":"Linux/amd64 service images","textPreview":"Linux/amd64 service images","textChars":26,"textLines":1,"bbox":[416,265,226,22]}
+{"kind":"textbox","id":"sh/dsji5sne","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[670,224,54,36]}
+{"kind":"shape","id":"sh/o7qpg3ex","slide":10,"bbox":[730,185,492,118]}
+{"kind":"textbox","id":"sh/vy90je9c","slide":10,"text":"Azure Container Apps","textPreview":"Azure Container Apps","textChars":20,"textLines":1,"bbox":[752,207,448,52]}
+{"kind":"textbox","id":"sh/6dcbulwv","slide":10,"text":"Control plane · inference · RAG · web console","textPreview":"Control plane · inference · RAG · web console","textChars":45,"textLines":1,"bbox":[752,265,448,22]}
+{"kind":"shape","id":"sh/d4vmtwra","slide":10,"bbox":[58,380,354,68]}
+{"kind":"textbox","id":"sh/oj2t83it","slide":10,"text":"Key Vault","textPreview":"Key Vault","textChars":9,"textLines":1,"bbox":[74,395,138,24]}
+{"kind":"textbox","id":"sh/z25kb6xk","slide":10,"text":"Externalized configuration","textPreview":"Externalized configuration","textChars":26,"textLines":1,"bbox":[212,396,184,24]}
+{"kind":"shape","id":"sh/6hcrmhk3","slide":10,"bbox":[448,380,354,68]}
+{"kind":"textbox","id":"sh/at47y1kr","slide":10,"text":"Blob Storage","textPreview":"Blob Storage","textChars":12,"textLines":1,"bbox":[464,395,138,24]}
+{"kind":"textbox","id":"sh/3ex0nuxc","slide":10,"text":"Model bundles and artifacts","textPreview":"Model bundles and artifacts","textChars":27,"textLines":1,"bbox":[602,396,184,24]}
+{"kind":"shape","id":"sh/szqtcj6t","slide":10,"bbox":[838,380,354,68]}
+{"kind":"textbox","id":"sh/lkjm1cfa","slide":10,"text":"AI Search","textPreview":"AI Search","textChars":9,"textLines":1,"bbox":[854,395,138,24]}
+{"kind":"textbox","id":"sh/ahoza1gv","slide":10,"text":"Vector + hybrid retrieval","textPreview":"Vector + hybrid retrieval","textChars":25,"textLines":1,"bbox":[992,396,184,24]}
+{"kind":"shape","id":"sh/32lszqtc","slide":10,"bbox":[58,476,354,68]}
+{"kind":"textbox","id":"sh/sneloj2t","slide":10,"text":"App Insights","textPreview":"App Insights","textChars":12,"textLines":1,"bbox":[74,491,138,24]}
+{"kind":"textbox","id":"sh/l87ed8ba","slide":10,"text":"Traces and logs","textPreview":"Traces and logs","textChars":15,"textLines":1,"bbox":[212,492,184,24]}
+{"kind":"shape","id":"sh/e9cvixcz","slide":10,"bbox":[448,476,354,68]}
+{"kind":"textbox","id":"sh/3q5o7qpg","slide":10,"text":"Event Hubs","textPreview":"Event Hubs","textChars":10,"textLines":1,"bbox":[464,491,138,24]}
+{"kind":"textbox","id":"sh/p0bi9s36","slide":10,"text":"Prediction and audit events","textPreview":"Prediction and audit events","textChars":27,"textLines":1,"bbox":[602,492,184,24]}
+{"kind":"shape","id":"sh/0fepkzup","slide":10,"bbox":[838,476,354,68]}
+{"kind":"textbox","id":"sh/bulwval8","slide":10,"text":"Postgres / Redis","textPreview":"Postgres / Redis","textChars":16,"textLines":1,"bbox":[854,491,138,24]}
+{"kind":"textbox","id":"sh/i9s36hcr","slide":10,"text":"Metadata and acceleration","textPreview":"Metadata and acceleration","textChars":25,"textLines":1,"bbox":[992,492,184,24]}
+{"kind":"notes","id":"nt/5cnboh","slide":10,"text":"The default cloud path is Azure Container Apps plus ACR, with Terraform managing the resource group, environment, storage, search, observability, and optional services like PostgreSQL, Redis, Event Hubs, and Azure ML. It shows cloud maturity without introducing Kubernetes complexity by default.\n\nManaged identity is used for image pulls and Azure resource access; runtime secrets should be externalized through Key Vault references. The remaining operating seams are explicit: publish the trained model bundle to Blob Storage, run Azure AI Search ingestion, and add a Container Apps Job or queue worker for scheduled workflow execution."}
+{"kind":"slide","id":"sl/fsjpw5","slide":11,"title":"10  /  TRADE-OFFS, RISKS, AND WHAT IS MOCKED","textShapes":8}
+{"kind":"textbox","id":"sh/x4nap4r6","slide":11,"text":"10  /  TRADE-OFFS, RISKS, AND WHAT IS MOCKED","textPreview":"10  /  TRADE-OFFS, RISKS, AND WHAT IS MOCKED","textChars":44,"textLines":1,"bbox":[58,34,460,26]}
+{"kind":"textbox","id":"sh/qd4vmtwr","slide":11,"text":"Be explicit about the seams between demo and production","textPreview":"Be explicit about the seams between demo and production","textChars":55,"textLines":1,"bbox":[58,67,1080,58]}
+{"kind":"shape","id":"sh/fyxobm58","slide":11,"bbox":[58,136,1164,2]}
+{"kind":"textbox","id":"sh/8v6psfil","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1170,665,48,22]}
+{"kind":"shape","id":"sh/xczed8v6","slide":11,"bbox":[58,184,540,346]}
+{"kind":"textbox","id":"sh/qpg3ex0n","slide":11,"text":"Intentionally simplified","textPreview":"Intentionally simplified","textChars":24,"textLines":1,"bbox":[80,206,496,52]}
+{"kind":"textbox","id":"sh/fa9w3m94","slide":11,"text":"Synthetic data only\nLocal fallback embeddings and chat provider\nLightweight deterministic drift logic\nSimplified reason codes and rules\nNo clinical workflow integration","textPreview":"Synthetic data only | Local fallback embeddings and chat provider | Lightweight deterministic drift logic | Simplified reason codes and r...","textChars":168,"textLines":5,"bbox":[80,264,496,250]}
+{"kind":"shape","id":"sh/8z25kb6x","slide":11,"bbox":[682,184,540,346]}
+{"kind":"textbox","id":"sh/1gvy90je","slide":11,"text":"Why it still demonstrates production judgment","textPreview":"Why it still demonstrates production judgment","textChars":45,"textLines":1,"bbox":[704,206,496,52]}
+{"kind":"textbox","id":"sh/pg3ex0nu","slide":11,"text":"Architecture is realistic\nControl points are production-aligned\nAzure deployment path is concrete\nGovernance and audit boundaries are visible\nKnown gaps are called out, not hidden","textPreview":"Architecture is realistic | Control points are production-aligned | Azure deployment path is concrete | Governance and audit boundaries a...","textChars":179,"textLines":5,"bbox":[704,264,496,250]}
+{"kind":"textbox","id":"sh/wval87ed","slide":11,"text":"Honesty about scope is an asset in a system-design interview.","textPreview":"Honesty about scope is an asset in a system-design interview.","textChars":61,"textLines":1,"bbox":[58,580,1080,30]}
+{"kind":"notes","id":"nt/fsjpw5","slide":11,"text":"I want to be direct about what is mocked. The point is not to pretend this is a live healthcare production platform. The point is to demonstrate system design judgment: governance boundaries, deployment patterns, lifecycle management, and operational feedback loops.\n\nThat honesty shows I understand the edges of a real production system."}
+{"kind":"slide","id":"sl/fu5m1f","slide":12,"title":"CAREAI PLATFORM","textShapes":9}
+{"kind":"textbox","id":"sh/mhk3q5o7","slide":12,"text":"CAREAI PLATFORM","textPreview":"CAREAI PLATFORM","textChars":15,"textLines":1,"bbox":[68,62,480,28]}
+{"kind":"textbox","id":"sh/t83itgfm","slide":12,"text":"A reusable AI platform—\nnot a collection of demos.","textPreview":"A reusable AI platform— | not a collection of demos.","textChars":50,"textLines":2,"bbox":[68,140,920,138]}
+{"kind":"shape","id":"sh/4nap4r65","slide":12,"bbox":[68,370,340,146]}
+{"kind":"textbox","id":"sh/bq1oryts","slide":12,"text":"Reusable services","textPreview":"Reusable services","textChars":17,"textLines":1,"bbox":[88,396,300,28]}
+{"kind":"textbox","id":"sh/m58z25kb","slide":12,"text":"Predictive ML and RAG share governance and operations.","textPreview":"Predictive ML and RAG share governance and operations.","textChars":54,"textLines":1,"bbox":[88,438,300,48]}
+{"kind":"shape","id":"sh/twra5gbq","slide":12,"bbox":[448,370,340,146]}
+{"kind":"textbox","id":"sh/4byhgn29","slide":12,"text":"Deployment discipline","textPreview":"Deployment discipline","textChars":21,"textLines":1,"bbox":[468,396,300,28]}
+{"kind":"textbox","id":"sh/bm58z25k","slide":12,"text":"Approval gates, safe rollout, observability, and rollback.","textPreview":"Approval gates, safe rollout, observability, and rollback.","textChars":58,"textLines":1,"bbox":[468,438,300,48]}
+{"kind":"shape","id":"sh/m1cfa9w3","slide":12,"bbox":[828,370,340,146]}
+{"kind":"textbox","id":"sh/cfa9w3m9","slide":12,"text":"Payer operations fit","textPreview":"Payer operations fit","textChars":20,"textLines":1,"bbox":[848,396,300,28]}
+{"kind":"textbox","id":"sh/1032lszq","slide":12,"text":"Built for complex workflows, human review, and traceability.","textPreview":"Built for complex workflows, human review, and traceability.","textChars":60,"textLines":1,"bbox":[848,438,300,48]}
+{"kind":"textbox","id":"sh/u9knih4b","slide":12,"text":"Discussion paths: governance · MLOps rollout safety · RAG loops · Azure operations","textPreview":"Discussion paths: governance · MLOps rollout safety · RAG loops · Azure operations","textChars":82,"textLines":1,"bbox":[68,610,1050,28]}
+{"kind":"notes","id":"nt/fu5m1f","slide":12,"text":"My closing line: this design fits a payer-focused AI platform role because it brings together reusable services, healthcare-aware governance, deployment automation, and production observability. It supports complex operational workflows, not isolated demos.\n\nIf the panel wants to go deeper, I can branch into control plane governance, MLOps rollout safety, RAG and loop engineering, or Azure deployment and operations."}

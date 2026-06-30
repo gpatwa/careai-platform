@@ -1,6 +1,7 @@
 from careai_control_plane_api.database import Database
 from careai_control_plane_api.models import PaymentIntegrityCaseORM, WorkflowRunORM
 from careai_control_plane_api.planner_job import run_once
+from sqlalchemy import select
 
 
 def sqlite_url(tmp_path, name: str) -> str:
@@ -55,3 +56,20 @@ def test_run_once_executes_due_autonomous_workflow(tmp_path) -> None:
 
     assert summary["executed_count"] == 1
     assert summary["completed_count"] == 1
+
+    session_generator = database.session()
+    session = next(session_generator)
+    try:
+        workflow = session.scalars(select(WorkflowRunORM)).one()
+        loop_history = workflow.planner_state_json["loop_history"]
+        assert [event["phase"] for event in loop_history] == [
+            "plan",
+            "verification",
+            "plan",
+            "verification",
+            "plan",
+            "verification",
+        ]
+        assert all(event["details"].get("passed", True) for event in loop_history)
+    finally:
+        session_generator.close()

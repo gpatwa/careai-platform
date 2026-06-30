@@ -17,11 +17,13 @@ sequenceDiagram
     Gen-->>Dev: CSV with synthetic features and label
     Dev->>Train: Train model from CSV
     Train->>Train: Split train/test and calculate metrics
-    Train->>MLflow: Log params, metrics, model, feature list, data hash
-    Train->>Store: Write metadata/report artifacts
+    Train->>MLflow: Log params, metrics, MLflow model, feature list, data hash
+    Train->>Store: Write model.joblib, model-metadata.json, metrics, feature list
     Train->>CP: Register candidate ModelArtifact when available
     CP-->>Train: Model id and audit event
 ```
+
+The training command does not automatically publish the serialized model bundle to Azure Blob Storage. For Azure inference, upload a versioned `model.joblib` plus matching `model-metadata.json` to the private artifacts container, then configure `CLAIMS_RISK_MODEL_URI` and `CLAIMS_RISK_MODEL_METADATA_PATH`. See [artifact deployment wiring](../artifact_deployment_wiring.md).
 
 ## Real-Time Inference And Monitoring
 
@@ -67,6 +69,37 @@ sequenceDiagram
     Eval->>RAG: Run 20-question synthetic eval set
     Eval->>CP: Register EvaluationRun when available
 ```
+
+Terraform provisions Azure AI Search but does not run the ingestion pipeline. Run the ingestion job with the Search and Azure OpenAI embedding configuration before enabling Azure-backed retrieval.
+
+## Bounded Workflow Orchestration
+
+```mermaid
+sequenceDiagram
+    participant Case as Payment Integrity Case
+    participant CP as Control Plane / WorkflowRun
+    participant Score as Inference Service
+    participant RAG as RAG Service
+    participant Review as Human Review Queue
+
+    Case->>CP: Create tenant-scoped WorkflowRun
+    CP->>CP: Plan one allowlisted tool and persist plan event
+    CP->>Score: Claims-risk scoring
+    Score-->>CP: Score and risk band
+    CP->>CP: Verify score/band evidence
+    CP->>RAG: Policy retrieval when needed
+    RAG-->>CP: Policy source ids and summary
+    CP->>CP: Verify policy evidence
+    alt evidence incomplete, first occurrence
+        CP->>CP: Persist retry event and retry retrieval once
+    else verification failure or review required
+        CP->>Review: Create review item; mark waiting_for_review
+    else verified
+        CP->>CP: Resolve case and persist final decision
+    end
+```
+
+The planner is deterministic rather than an LLM or LangGraph graph. It persists the latest 40 plan, verification, retry, and handoff events in `WorkflowRun.planner_state_json.loop_history`, avoiding raw request values in the history.
 
 ## Data Classification
 

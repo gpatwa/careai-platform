@@ -35,3 +35,5 @@ POST /evaluations
 ## Promotion Gate
 
 The report includes thresholds and a top-level `passed` flag. In an enterprise LLMOps workflow, this becomes a pre-promotion gate: failed retrieval, citation, groundedness, or safety checks block prompt/model deployment until reviewed.
+
+The evaluated RAG response also exposes bounded `agent_loop` metadata: retrieval, answer generation, citation/groundedness verification, and at most one retry with verifier feedback. This loop is independent of the control-plane workflow planner, which coordinates cross-service case work.

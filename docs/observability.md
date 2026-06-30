@@ -27,6 +27,13 @@ LLMOps-specific metrics:
 - `careai.rag.safety_flag.count`
 - `careai.fallback.count` with `fallback_type=rag`
 
+Workflow-loop audit signals:
+
+- `workflow_run.tool_executed` records the selected allowlisted tool and safe evidence keys.
+- `workflow_run.verification_retry_scheduled` records the bounded policy-retrieval retry.
+- `workflow_run.verification_human_review_required` records verifier handoff to the review queue.
+- `WorkflowRun.planner_state_json.loop_history` retains the latest 40 plan, verification, retry, and handoff events; it deliberately stores safe metadata rather than raw request values.
+
 ## Local Usage
 
 No Application Insights setup is required for local development:
@@ -81,6 +88,7 @@ Governance dashboard:
 - Audit event logs by `actor`, `action`, and `target_type`.
 - Promotion and approval events correlated by `correlation_id`.
 - Safety flag trends by role and prompt version.
+- Workflow runs by status, current step, verifier action, retry count, and human-review backlog.
 
 ## Suggested Alerts
 
@@ -91,6 +99,7 @@ Governance dashboard:
 - RAG `careai.rag.safety_flag.count` increases sharply for prompt injection or hidden prompt flags.
 - RAG LLM p95 latency exceeds 5 seconds for 10 minutes.
 - No prediction events received for an active production deployment for 30 minutes.
+- Workflow verification failures or human-review handoffs rise above the team’s operating baseline.
 
 ## Kusto Starting Points
 

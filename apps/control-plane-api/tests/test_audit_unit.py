@@ -15,6 +15,7 @@ def test_write_audit_event_persists_correlation_id() -> None:
     try:
         write_audit_event(
             session,
+            tenant_id="unit-test-tenant",
             actor="unit-test",
             action="model.promoted",
             target_type="model",
@@ -24,6 +25,7 @@ def test_write_audit_event_persists_correlation_id() -> None:
         session.commit()
 
         event = session.scalars(select(AuditEventORM)).one()
+        assert event.tenant_id == "unit-test-tenant"
         assert event.correlation_id == "unit-correlation-id"
         assert event.metadata_json == {"to_stage": "staging"}
     finally:

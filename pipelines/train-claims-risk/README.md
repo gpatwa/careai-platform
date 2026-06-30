@@ -34,6 +34,7 @@ python -m train_claims_risk.train \
 
 Outputs are written to `artifacts/train-claims-risk/`:
 
+- `model.joblib` (preprocessing pipeline and classifier)
 - `feature-list.json`
 - `metrics.json`
 - `model-metadata.json`
@@ -94,3 +95,7 @@ The pipeline computes:
 - `model-metadata.json` matches the `control-plane-api` model registration schema.
 - Candidate-stage registration demonstrates governed promotion before production.
 - Segment metrics provide the first hook for responsible AI and model monitoring discussions.
+
+## Serving and Azure Publishing
+
+Training and MLflow logging do not automatically publish a model to Azure. To serve a real artifact in Azure, upload a versioned `model.joblib` and matching `model-metadata.json` to the private Storage Account artifacts container, then configure `CLAIMS_RISK_MODEL_URI` and `CLAIMS_RISK_MODEL_METADATA_PATH` on the inference Container App. The service loads the model through managed identity; otherwise it remains in deterministic fallback mode. See [artifact deployment wiring](../../docs/artifact_deployment_wiring.md).

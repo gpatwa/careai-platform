@@ -86,10 +86,18 @@ from careai_control_plane_api.schemas import (
     WorkflowRunRead,
     WorkflowSignalCreate,
 )
+from careai_control_plane_api.workflow_loop import (
+    LoopVerification,
+    append_loop_event,
+    increment_retry,
+    retry_count,
+    verify_tool_result,
+)
 
 OrmModel = TypeVar("OrmModel")
 DEFAULT_LATENCY_SLO_MS = 750
 DEFAULT_ERROR_RATE_SLO = 0.02
+MAX_VERIFICATION_RETRIES_PER_TOOL = 1
 logger = logging.getLogger(__name__)
 
 
@@ -406,8 +414,7 @@ def advance_workflow_run(
             )
         else:
             workflow.current_step = "decision"
-            workflow.status = "completed"
-            output_json["automation_decision"] = "auto_clear"
+            workflow.status = "running"
     elif signal_type == "human_review_completed":
         workflow.current_step = "decision"
         workflow.status = "completed"
@@ -639,6 +646,77 @@ def set_workflow_next_run(workflow: WorkflowRunORM) -> None:
         workflow.next_run_at = None
 
 
+def route_verification_failure(
+    session: Session,
+    workflow: WorkflowRunORM,
+    *,
+    tool_name: str,
+    verification: LoopVerification,
+) -> bool:
+    """Retry bounded retrieval once, otherwise pause for human validation."""
+    state = dict(workflow.planner_state_json or {})
+    can_retry = (
+        verification.next_action == "retry"
+        and tool_name == "policy_retrieval_tool"
+        and retry_count(state, tool_name) < MAX_VERIFICATION_RETRIES_PER_TOOL
+    )
+    now = planner_now().isoformat()
+    if can_retry:
+        output_json = dict(workflow.output_json or {})
+        output_json.pop("policy_answer", None)
+        workflow.output_json = output_json
+        workflow.status = "running"
+        workflow.current_step = "policy_retrieval"
+        state = increment_retry(state, tool_name)
+        workflow.planner_state_json = append_loop_event(
+            state,
+            phase="retry",
+            tool_name=tool_name,
+            at=now,
+            details={"feedback": verification.feedback},
+        )
+        return True
+
+    advance_workflow_run(
+        session,
+        workflow,
+        signal_type="human_review_required",
+        signal_metadata={
+            "selected_tool": tool_name,
+            "verification_flags": verification.feedback,
+            "evidence_keys": verification.evidence_keys,
+        },
+    )
+    review_item = create_review_queue_item(
+        session,
+        tenant_id=workflow.tenant_id,
+        workflow_run_id=workflow.id,
+        case_id=(workflow.target_id if workflow.target_type == "payment_integrity_case" else None),
+        priority="high",
+        queue_name="ai-evidence-review",
+        review_type="verification_failure",
+        payload_json={
+            "tool_name": tool_name,
+            "verification_flags": verification.feedback,
+            "evidence_keys": verification.evidence_keys,
+        },
+    )
+    workflow.review_required = True
+    workflow.status = "waiting_for_review"
+    workflow.current_step = "human_review"
+    workflow.planner_state_json = append_loop_event(
+        dict(workflow.planner_state_json or {}),
+        phase="human_review",
+        tool_name=tool_name,
+        at=now,
+        details={
+            "feedback": verification.feedback,
+            "review_queue_item_id": review_item.id,
+        },
+    )
+    return False
+
+
 def execute_workflow_run(
     session: Session,
     workflow: WorkflowRunORM,
@@ -651,13 +729,24 @@ def execute_workflow_run(
     for _ in range(step_limit):
         decision = planner_decision_for_workflow(session, workflow)
         state = dict(workflow.planner_state_json or {})
+        planned_at = planner_now().isoformat()
         state["last_decision"] = {
             "tool_name": decision.get("tool_name"),
             "reasoning": decision.get("reasoning"),
             "blocked_reason": decision.get("blocked_reason"),
-            "at": planner_now().isoformat(),
+            "at": planned_at,
         }
-        workflow.planner_state_json = state
+        workflow.planner_state_json = append_loop_event(
+            state,
+            phase="plan",
+            tool_name=decision.get("tool_name"),
+            at=planned_at,
+            details={
+                "can_execute": bool(decision.get("can_execute")),
+                "blocked_reason": decision.get("blocked_reason"),
+                "input_keys": sorted(dict(decision.get("inputs_json") or {})),
+            },
+        )
         workflow.last_planner_run_at = planner_now()
         if not decision["can_execute"] or not decision["tool_name"]:
             set_workflow_next_run(workflow)
@@ -665,6 +754,19 @@ def execute_workflow_run(
 
         tool_name = str(decision["tool_name"])
         execute_planner_tool(session, workflow, tool_name=tool_name, actor=actor)
+        verification = verify_tool_result(
+            tool_name=tool_name,
+            output_json=dict(workflow.output_json or {}),
+            review_required=workflow.review_required,
+        )
+        verification_at = planner_now().isoformat()
+        workflow.planner_state_json = append_loop_event(
+            dict(workflow.planner_state_json or {}),
+            phase="verification",
+            tool_name=tool_name,
+            at=verification_at,
+            details=verification.to_dict(),
+        )
         write_audit_event(
             session,
             tenant_id=workflow.tenant_id,
@@ -672,8 +774,37 @@ def execute_workflow_run(
             action="workflow_run.tool_executed",
             target_type="workflow_run",
             target_id=workflow.id,
-            metadata={"tool_name": tool_name, "workflow_type": workflow.workflow_type},
+            metadata={
+                "tool_name": tool_name,
+                "workflow_type": workflow.workflow_type,
+                "verification_passed": verification.passed,
+                "verification_next_action": verification.next_action,
+                "verification_flags": verification.feedback,
+            },
         )
+        if not verification.passed:
+            retried = route_verification_failure(
+                session,
+                workflow,
+                tool_name=tool_name,
+                verification=verification,
+            )
+            write_audit_event(
+                session,
+                tenant_id=workflow.tenant_id,
+                actor=actor,
+                action=(
+                    "workflow_run.verification_retry_scheduled"
+                    if retried
+                    else "workflow_run.verification_human_review_required"
+                ),
+                target_type="workflow_run",
+                target_id=workflow.id,
+                metadata={
+                    "tool_name": tool_name,
+                    "verification_flags": verification.feedback,
+                },
+            )
         set_workflow_next_run(workflow)
         if not run_until_blocked:
             break

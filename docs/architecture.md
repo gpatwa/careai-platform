@@ -20,6 +20,20 @@
 
 ## Agent Workflow Runtime
 
+The control-plane workflow runtime uses bounded loop engineering rather than an unbounded agent. Each iteration persists a planner decision, executes one allowlisted tool, verifies bounded evidence, and records whether it advanced, retried, or required human review. `planner_state_json.loop_history` retains the latest plan, verifier, retry, and handoff events for audit and restart-safe inspection. The verifier requires a valid risk score/band after scoring, policy evidence after retrieval, and a final decision before closure. Policy retrieval may retry once when evidence is incomplete; any other verifier failure becomes a human-review handoff.
+
+```mermaid
+flowchart LR
+    State["Persisted WorkflowRun state"] --> Plan["Plan one allowlisted tool"]
+    Plan --> Execute["Execute tool"]
+    Execute --> Verify["Verify bounded evidence"]
+    Verify -->|"pass"| Advance["Advance workflow state"]
+    Verify -->|"one retrieval retry"| Plan
+    Verify -->|"failure or budget exhausted"| Review["Human-review queue"]
+    Advance --> State
+    Review --> State
+```
+
 The control plane now includes a lightweight workflow runtime intended for payer-style agent orchestration. A `WorkflowRun` represents a bounded agent plan such as `payment_integrity_claim_review` or `prompt_self_optimization`. Each run records `tenant_id`, target business object, current step, status, structured inputs/outputs, reviewer assignment, whether human review is required, and planner metadata for autonomous execution.
 
 Services advance runs by sending workflow signals. Example signals are `claims_risk_scored`, `policy_answered`, `human_review_completed`, and `case_closed`. The runtime now also supports an autonomous planner that selects the next tool for a workflow, executes bounded steps, and reschedules due runs through a background job. This is intentionally simpler than a full DAG engine, but it demonstrates how reusable AI services can coordinate over a governed runtime instead of embedding workflow logic independently in each service.

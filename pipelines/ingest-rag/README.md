@@ -36,6 +36,8 @@ python -m ingest_rag.ingest --input-dir data/synthetic_docs
 
 If Azure AI Search env vars are present, the pipeline creates or updates the index and uploads chunks. If they are absent, it writes the local JSON index.
 
+Terraform creates the Azure AI Search resource but does not run this ingestion command or upload the synthetic documents. Run the pipeline as an explicit release/job step before enabling Azure-backed RAG. See [artifact deployment wiring](../../docs/artifact_deployment_wiring.md).
+
 ## Index Schema
 
 The Azure AI Search index contains:

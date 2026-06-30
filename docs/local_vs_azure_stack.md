@@ -14,6 +14,7 @@ This page is a compact interview aid for `careai-platform`.
 | RAG ingestion | Local deterministic embeddings, JSON vector index fallback |
 | Frontend | TypeScript, React/Vite |
 | Runtime | Docker Compose |
+| Workflow orchestration | Deterministic bounded planner started by the local CLI; PostgreSQL persists workflow state and verifier history. |
 | Quality gates | pytest, ruff, structured JSON logging |
 
 ## Azure Stack
@@ -33,6 +34,7 @@ This page is a compact interview aid for `careai-platform`.
 | Optional MLOps platform | Azure Machine Learning |
 | AI providers | Azure OpenAI for chat and embeddings when configured |
 | Delivery | GitHub Actions with OIDC or documented secret fallback |
+| Workflow orchestration | Control-plane Container App plus durable PostgreSQL; add a Container Apps Job, Function, or queue worker for scheduled due-workflow execution. |
 
 ## One-Slide Architecture
 
@@ -40,7 +42,7 @@ This page is a compact interview aid for `careai-platform`.
 flowchart LR
     subgraph Local["Local-first developer loop"]
         UI["Web Console"]
-        CP["Control Plane API"]
+        CP["Control Plane API\nregistry + bounded workflow state"]
         INF["Inference Service"]
         RAG["RAG Service"]
         ML["MLflow"]
@@ -91,5 +93,6 @@ Locally, we run FastAPI services, PostgreSQL, Redis, MLflow, and a React/Vite co
 
 On Azure, the same services are containerized and deployed to Azure Container Apps from Azure Container Registry. Terraform provisions the platform dependencies: Key Vault, Storage, Azure AI Search, Event Hubs, Log Analytics, Application Insights, and optional PostgreSQL or Redis. OpenTelemetry and structured logs feed observability, while Event Hubs provides the streaming backbone for prediction, audit, drift, and feedback events.
 
-The interview message is simple: the local stack proves the workflow quickly, and the Azure stack shows how the same design becomes a governed enterprise platform.
+The workflow runtime follows the same pattern: locally, a deterministic scheduler advances one allowlisted tool at a time and persists verification history. In Azure, the API wiring is ready, but scheduling still needs an explicit Container Apps Job, Function, or queue worker.
 
+The interview message is simple: the local stack proves the workflow quickly, and the Azure stack shows how the same design becomes a governed enterprise platform.

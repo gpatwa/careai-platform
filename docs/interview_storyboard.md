@@ -18,6 +18,10 @@ Open these after the script completes:
 - Control plane API docs: `http://localhost:8000/docs`
 - MLflow: `http://localhost:5001`
 
+If you want a structured system design version of the same story, use:
+
+- [System design interview guide](system_design_interview_guide.md)
+
 ## 10-Minute Walkthrough
 
 ### 0:00-1:00 Problem Statement
@@ -37,7 +41,7 @@ Show the Overview page and the architecture diagram in `README.md`.
 Walk the boundaries:
 
 - Control plane tracks datasets, models, deployments, prompt templates, evaluations, approvals, model cards, prompt cards, audit events, prediction events, drift snapshots, and rollback health.
-- The same control plane now hosts a lightweight workflow runtime for payer operations, plus tenant-scoped review queue items and Payment Integrity cases so the demo shows orchestration, not just registries.
+- The same control plane now hosts a deterministic bounded workflow runtime for payer operations, plus tenant-scoped review queue items and Payment Integrity cases so the demo shows orchestration, not just registries.
 - Inference service serves the synthetic claims-risk API with validation, feature checks, audit events, monitoring events, fallback scoring, and champion/challenger routing metadata.
 - RAG service retrieves from Azure AI Search when configured or a local JSON vector index otherwise, then applies prompt registry, safety checks, citations, and audit logging.
 - MLflow stores experiment runs and model artifacts.
@@ -139,6 +143,8 @@ Explain:
 Use this language: monitoring is not just charts; it is part of the release safety loop.
 
 If you want one concrete payer moment here, open Governance after a high-risk scoring plus policy retrieval path and show that the workflow moved into `waiting_for_review`, created a human review queue item, and retained a tenant-scoped case record end to end.
+
+Then open the workflow run and explain `planner_state_json.loop_history`: the runtime plans one allowlisted tool, executes it, verifies its safe evidence, and records the outcome. Missing policy evidence retries once; any other verifier failure becomes a human-review handoff. It is deterministic custom orchestration today, not LangGraph or an unbounded LLM agent.
 
 ### 7:00-8:15 RAG Query With Citations and Safety
 

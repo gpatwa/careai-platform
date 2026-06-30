@@ -7,6 +7,7 @@
 Implemented platform areas:
 
 - Control plane API for datasets, model artifacts, deployments, prompt templates, evaluations, approvals, audit events, prediction events, error events, drift snapshots, model cards, and prompt cards.
+- Bounded cross-service workflow runtime for Payment Integrity cases: deterministic allowlisted planning, evidence verification, one policy-retrieval retry, persisted loop history, and human-review handoffs.
 - Synthetic claims-risk ML pipeline with deterministic data generation, scikit-learn training, MLflow logging, metrics, segment metrics, lineage metadata, baseline feature distributions, and optional control-plane registration.
 - Inference service with Pydantic feature validation, feature freshness and missingness checks, safe prediction responses, reason codes, correlation IDs, fallback scoring, audit events, prediction monitoring events, and champion/challenger traffic-split metadata.
 - Monitoring APIs and drift job with deterministic PSI-style checks, SLO-oriented error and latency summaries, rollback recommendation metadata, and event-consumer hooks.
@@ -28,6 +29,7 @@ Supporting architecture and deployment docs:
 - [Azure network architecture](diagrams/azure_network_architecture.md)
 - [Local deployment runbook](deployment/local_deployment.md)
 - [Azure deployment runbook](deployment/azure_deployment_runbook.md)
+- [Artifact deployment wiring](artifact_deployment_wiring.md)
 
 ## What Is Intentionally Mocked
 
@@ -42,6 +44,7 @@ The demo is intentionally synthetic and uses safe local fallbacks:
 - Local retrieval uses deterministic embeddings and a JSON vector index unless Azure AI Search and Azure OpenAI embeddings are configured.
 - Drift, safety, groundedness, and quality metrics are lightweight deterministic heuristics intended for system design explanation.
 - Rollback recommendation is metadata-driven and threshold-based; automated rollback execution is represented by API and runbook controls.
+- The workflow planner is deterministic custom code, not LangGraph or an LLM planner. It has bounded retries and review handoffs, but not queue-backed scheduling or full distributed-workflow semantics.
 - Terraform uses public endpoints for optional PostgreSQL/Redis in the low-friction demo path; private networking is a production next step.
 
 ## How To Deploy To Azure
@@ -106,6 +109,7 @@ helm template careai-platform infra/helm/optional-aks
 - Azure AI Search and Azure OpenAI integrations require real Azure resources and credentials; tests run without those credentials by design.
 - Terraform state can contain generated optional PostgreSQL credentials when PostgreSQL is enabled; production needs protected remote state and strict RBAC.
 - Container Apps use simple scaling and public ingress for the demo; production would add private networking, managed identities for more data-plane integrations, WAF/API gateway controls, and environment-specific policies.
+- Terraform provisions storage and search but does not publish a trained model bundle to Blob Storage, ingest RAG documents into Azure AI Search, or create a scheduled planner job.
 
 ## Next Production Steps
 
@@ -114,6 +118,7 @@ helm template careai-platform infra/helm/optional-aks
 - Add private networking, VNet integration, private endpoints, API gateway/WAF, and environment isolation.
 - Split champion and challenger model loading into distinct runtime artifacts and emit per-route SLO metrics.
 - Add scheduled drift jobs, background evaluation jobs, retraining triggers, and alert-to-incident workflows.
+- Add a queue-backed/Container Apps Job workflow scheduler with idempotency, retries, and dead-letter handling; only then consider a structured, policy-gated LLM planner.
 - Add richer data-quality validation, schema registry checks, model explainability artifacts, and fairness review workflows.
 - Promote RAG evaluations to a stronger eval harness with human review queues, regression baselines, and prompt/version approval workflows.
 - Add remote Terraform state, policy-as-code, container vulnerability scanning, SBOM generation, image signing, and release approvals.

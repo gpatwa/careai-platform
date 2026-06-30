@@ -97,6 +97,16 @@ python -m evaluate_rag.run \
 - Compose passes Azure-related variables through from `.env`, so local testing can use Azure AI Search, Azure OpenAI, or Event Hubs without changing code.
 - Do not put real secrets in `.env.example` or committed files. Use local `.env` only.
 
+## Workflow Scheduler
+
+Compose starts the API but deliberately does not start the workflow scheduler. Run bounded workflow work explicitly during a demo:
+
+```bash
+.venv/bin/careai-autonomous-planner --limit 10 --max-steps-per-workflow 5
+```
+
+Inspect `GET /workflow-runs/<workflow-run-id>` after execution. Its `planner_state_json.loop_history` contains safe plan, verification, retry, and human-review handoff metadata. Policy retrieval can retry once for missing evidence; other verification failures stop in `waiting_for_review`.
+
 ## Shutdown
 
 ```bash

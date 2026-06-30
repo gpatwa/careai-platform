@@ -177,6 +177,15 @@ curl -X POST http://localhost:8000/workflow-runs/<workflow-run-id>/execute \
   -d '{"max_steps": 5, "run_until_blocked": true}'
 ```
 
+After execution, inspect the persisted bounded-loop state:
+
+```bash
+curl -s http://localhost:8000/workflow-runs/<workflow-run-id> | \
+  jq '{status, current_step, review_required, planner_state_json}'
+```
+
+`planner_state_json.loop_history` keeps the latest 40 safe plan, verifier, retry, and handoff events. A missing policy-evidence check may retry once; any other failed verification creates a review queue item and leaves the workflow in `waiting_for_review`. The history intentionally stores metadata and evidence keys rather than raw question, claim, or member-like values.
+
 To run due workflows as a background-style local scheduler:
 
 ```bash

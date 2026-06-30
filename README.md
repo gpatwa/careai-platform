@@ -6,7 +6,7 @@ The platform is intended to show the full lifecycle of model and RAG systems: sy
 
 It now also demonstrates a payer-style agent workflow path: tenant-aware workflow runs, Payment Integrity case intake, model scoring, policy retrieval, human review queue escalation, and final case resolution.
 
-The control plane also includes an autonomous planner: it can select the next workflow tool, execute bounded workflows in the background, and run a governed prompt self-optimization path that drafts, evaluates, and optionally deploys a new prompt version when explicit self-approval flags are enabled.
+The control plane also includes a deterministic, bounded workflow planner (not LangGraph): it selects one allowlisted tool at a time, executes it, verifies the resulting evidence, retries incomplete policy retrieval once, and otherwise hands the case to a human reviewer. The persisted loop history makes that orchestration inspectable and restart-safe. It also runs a governed prompt self-optimization path that drafts, evaluates, and optionally deploys a new prompt version when explicit self-approval flags are enabled.
 
 ## Architecture
 
@@ -183,6 +183,8 @@ Run the autonomous workflow scheduler locally:
 .venv/bin/careai-autonomous-planner --limit 10 --max-steps-per-workflow 5
 ```
 
+The scheduler is intentionally started separately from Compose. Inspect a run's `planner_state_json.loop_history` to see plan, verification, retry, and human-review handoff events without recording raw input content.
+
 Run deployed smoke tests after Azure Container Apps are deployed:
 
 ```bash
@@ -202,9 +204,11 @@ Architecture and deployment docs:
 - [System architecture](docs/diagrams/system_architecture.md)
 - [Data flow](docs/diagrams/data_flow.md)
 - [Azure network architecture](docs/diagrams/azure_network_architecture.md)
+- [System design interview guide](docs/system_design_interview_guide.md)
 - [Local vs Azure stack](docs/local_vs_azure_stack.md)
 - [Local deployment runbook](docs/deployment/local_deployment.md)
 - [Azure deployment runbook](docs/deployment/azure_deployment_runbook.md)
+- [Artifact deployment wiring](docs/artifact_deployment_wiring.md)
 - [Final architecture review](docs/final_architecture_review.md)
 
 Demo flow:
@@ -216,7 +220,7 @@ Demo flow:
 5. Open Monitoring to explain prediction counts, latency, drift status, risk-band mix, and feature missingness.
 6. Open RAG, choose a role, ask a synthetic policy question, and review answer citations plus safety flags.
 7. Open Governance to show release gates, approvals, workflow runs, human review queue items, Payment Integrity cases, audit events, model cards, prompt cards, and evaluation runs. A production promotion is blocked until an approved model card and approval decision exist.
-8. Use `GET /workflow-runs/{id}/planner-decision` or `POST /planner/run-due` to explain autonomous tool selection and background orchestration.
+8. Use `GET /workflow-runs/{id}/planner-decision`, `POST /workflow-runs/{id}/execute`, or `POST /planner/run-due` to show the bounded plan → execute → verify loop. Inspect `planner_state_json.loop_history`; incomplete policy evidence retries once, while other verification failures create a human-review item.
 
 Screenshot placeholders for interview materials: capture Overview, Models, Monitoring, RAG, and Governance screens after the dev server is running, then save the images under `docs/screenshots/` if you want them in a deck or README extension.
 

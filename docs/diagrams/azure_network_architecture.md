@@ -58,6 +58,7 @@ flowchart TB
 - Azure AI Search is provisioned by Terraform, but the current application wrapper still uses Search API-key auth for data-plane queries. Set `AZURE_AI_SEARCH_API_KEY` when enabling Azure-backed RAG.
 - PostgreSQL and Redis are optional because they can add cost. Without PostgreSQL or a supplied `DATABASE_URL`, Azure container-local control-plane state is ephemeral.
 - The web console is a static Vite build; API URLs are baked into the Docker image at build time.
+- The control-plane API persists bounded workflow state when durable PostgreSQL is enabled, but Terraform does not create a scheduled planner job. Use an explicit API invocation for a demo or add a Container Apps Job/queue consumer for production.
 
 ## Production Network Recommendations
 

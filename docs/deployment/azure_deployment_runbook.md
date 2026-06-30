@@ -139,6 +139,8 @@ scripts/demo_azure_smoke_test.sh
 - Event Hubs namespace/name are passed to Terraform-created apps when enabled. A connection string can be supplied as a workflow secret for environments that are not using managed identity.
 - The web console is static. Rebuild it whenever API base URLs change.
 - The inference service loads a real model from Azure Blob Storage when `CLAIMS_RISK_MODEL_URI` and `CLAIMS_RISK_MODEL_METADATA_PATH` are provided. The Container App must also expose `AZURE_MANAGED_IDENTITY_CLIENT_ID` for the user-assigned identity, and that identity needs `Storage Blob Data Contributor` on the artifacts container.
+- Terraform does not upload a trained model bundle. Publish a versioned `model.joblib` and matching `model-metadata.json` to the artifacts container, then set the two model URI variables before relying on non-fallback inference. See [artifact deployment wiring](../artifact_deployment_wiring.md).
+- Terraform deploys the control-plane API, but not a scheduled planner job. For a demo, invoke `POST /planner/run-due`; for production, add a Container Apps Job, Function, or queue consumer backed by durable PostgreSQL and the existing bounded verifier rules.
 
 ## Production Hardening
 
@@ -146,5 +148,6 @@ scripts/demo_azure_smoke_test.sh
 - Move Terraform state to a protected remote backend.
 - Enable durable PostgreSQL and run migrations as a release step.
 - Add scheduled drift jobs and alert rules.
+- Add a queue-backed or Container Apps Job scheduler for workflow runs, with idempotency and dead-letter handling.
 - Replace API-key Search access with managed identity.
 - Split public UI ingress from internal service ingress.
